@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 520" font-family="sans-serif" font-size="13">
+<rect width="980" height="520" fill="#fff"/>
+<text x="20" y="28" font-size="18" font-weight="bold">QoS-Aware Emergency Traffic Prioritization - architecture</text>
+<g fill="#e8f0fe" stroke="#3d85c6"><rect x="20" y="60" width="150" height="48" rx="6"/><rect x="20" y="120" width="150" height="48" rx="6"/><rect x="20" y="180" width="150" height="48" rx="6"/><rect x="20" y="240" width="150" height="48" rx="6"/></g>
+<text x="32" y="88">Voice (EF, UDP 5004)</text><text x="32" y="148">Video (AF41, UDP 5006)</text><text x="32" y="208">Emergency (CS6, 5911)</text><text x="32" y="268">Bulk data (BE, 5201)</text>
+<text x="20" y="322" font-size="12" fill="#555">Sources emit QEP packets:</text>
+<text x="20" y="338" font-size="12" fill="#555">IP[DSCP] + UDP + 24-byte QEP header</text>
+<path d="M170 84 H240 M170 144 H240 M170 204 H240 M170 264 H240" stroke="#333" marker-end="url(#a)"/>
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8z" fill="#333"/></marker></defs>
+<rect x="240" y="50" width="130" height="250" rx="8" fill="#fff4e5" stroke="#e69138"/>
+<text x="258" y="80" font-weight="bold">Classifier</text>
+<text x="252" y="104" font-size="12">1 QEP header</text><text x="252" y="124" font-size="12">2 DSCP</text><text x="252" y="144" font-size="12">3 UDP port</text><text x="252" y="164" font-size="12">4 flow cache</text><text x="252" y="184" font-size="12">5 default = BE</text>
+<text x="252" y="230" font-size="11" fill="#555">class = EM/VO/VI/BE</text>
+<path d="M370 175 H430" stroke="#333" marker-end="url(#a)"/>
+<rect x="430" y="40" width="330" height="290" rx="8" fill="#f3e8fb" stroke="#8e44ad"/>
+<text x="448" y="66" font-weight="bold">Scheduler on the congested egress port (EPS)</text>
+<rect x="448" y="80" width="140" height="34" fill="#fff" stroke="#8e44ad"/><text x="456" y="102" font-size="12">Policer: flow + class</text>
+<text x="600" y="102" font-size="11" fill="#555">out-of-profile -> re-mark BE</text>
+<rect x="448" y="126" width="296" height="30" fill="#f4cccc" stroke="#cc0000"/><text x="456" y="146" font-size="12">Tier 1  Emergency queue  (strict, highest)</text>
+<rect x="448" y="164" width="296" height="30" fill="#fce5cd" stroke="#e69138"/><text x="456" y="184" font-size="12">Tier 2  Voice queue  (strict, policed 35 %)</text>
+<rect x="448" y="202" width="296" height="52" fill="#d9ead3" stroke="#6aa84f"/><text x="456" y="222" font-size="12">Tier 3  WFQ pool  Video : Best-effort = 6 : 4</text>
+<text x="456" y="242" font-size="11" fill="#555">guaranteed share =&gt; no starvation</text>
+<text x="448" y="278" font-size="11" fill="#555">Shared buffer with push-out: arriving high class</text><text x="448" y="293" font-size="11" fill="#555">evicts tail packets of lower classes when full.</text>
+<text x="448" y="316" font-size="11" fill="#555">Baselines: FIFO, Strict PQ, WFQ (SCFQ), DRR</text>
+<path d="M760 175 H820" stroke="#333" marker-end="url(#a)"/>
+<rect x="820" y="130" width="140" height="90" rx="8" fill="#e8f0fe" stroke="#3d85c6"/><text x="838" y="160" font-weight="bold">Bottleneck</text><text x="838" y="180">10 Mbit/s link</text><text x="838" y="198" font-size="11">outage / fade / loss</text>
+<path d="M890 220 V260" stroke="#333" marker-end="url(#a)"/>
+<rect x="820" y="260" width="140" height="60" rx="8" fill="#e8f0fe" stroke="#3d85c6"/><text x="840" y="285">Receiver /</text><text x="840" y="303">Analyzer (QEP ts)</text>
+<rect x="20" y="370" width="940" height="130" rx="8" fill="#f7f7f7" stroke="#bbb"/>
+<text x="36" y="395" font-weight="bold">Three execution environments (same classifier + schedulers)</text>
+<text x="36" y="420">1. qos/simulator.py     discrete-event simulator, 9 test cases + load sweep, pcap export for Wireshark</text>
+<text x="36" y="442">2. live/*               real UDP sockets, software QoS router with rate-limited egress (loopback, any OS)</text>
+<text x="36" y="464">3. mininet/*            Linux namespaces, tc tbf/prio/htb on r1-eth2 with DSCP filters, tcpdump capture</text>
+<text x="36" y="486">4. dashboard/server.py  browser dashboard that runs scenarios and draws the charts</text>
+</svg>

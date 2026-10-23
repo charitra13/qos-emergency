@@ -1,0 +1,161 @@
+=====================================================================================
+ QoS-AWARE EMERGENCY TRAFFIC PRIORITIZATION - HOW TO RUN EVERYTHING
+=====================================================================================
+Requirements : Python 3.8+ (standard library only).  Works on Linux, macOS, Windows.
+Optional     : Wireshark/tshark (packet verification), Mininet + root (Linux only).
+Unzip, open a terminal in the project folder (the one containing README.md), then:
+
+-------------------------------------------------------------------------------------
+0. SMOKE TEST (30 seconds)
+-------------------------------------------------------------------------------------
+   python3 -m unittest -v tests.test_qos
+   EXPECTED: "Ran 31 tests ... OK"  (about 20 s)
+   (Windows: use "python" or "py -3" instead of python3.)
+
+-------------------------------------------------------------------------------------
+1. RUN EVERYTHING AT ONCE
+-------------------------------------------------------------------------------------
+   sh run_all.sh                      (Linux/macOS)   - tests, all simulations, pcaps, live demo
+   python3 run_simulation.py --scenario all          - simulation only (~30 s)
+   Outputs in results/ : report_all.html (open in browser: charts + PASS/FAIL tables),
+   summary_all.csv, summary_all.md, results_all.json
+
+-------------------------------------------------------------------------------------
+2. SIMULATION TEST CASES (one command each)
+-------------------------------------------------------------------------------------
+   General form:  python3 run_simulation.py --scenario <id> [--schedulers fifo,pq,wfq,drr,eps]
+                                              [--seed N] [--duration S] [--out DIR]
+   Schedulers: fifo=no QoS, pq=strict priority, wfq, drr, eps=proposed hybrid.
+
+ TC1  NORMAL LOAD (~70 %)
+      python3 run_simulation.py --scenario tc1
+      Expect: all schedulers PASS every SLA (QoS not needed without congestion).
+
+ TC2  HEAVY CONGESTION (~170 %)
+      python3 run_simulation.py --scenario tc2
+      Expect: FIFO FAILS emergency+voice+video (p99 ~105 ms, loss 3-30 %);
+              PQ/WFQ/DRR/EPS PASS (emergency p99 6-10 ms, 0 % loss).
+
+ TC3  DISASTER SURGE (20 sources x 60 pps for 6 s during congestion)
+      python3 run_simulation.py --scenario tc3
+      Expect: FIFO emergency FAIL (2.5 % loss); EPS emergency PASS, 0 % loss.
+
+ TC4  FAILURE - 2 s LINK OUTAGE (t = 8..10 s) WITH EMERGENCY EVENT
+      python3 run_simulation.py --scenario tc4
+      Expect: emergency loss: FIFO ~20 %, PQ/WFQ/DRR ~16 %, EPS 0.0 %;
+              "recovery time" line shows how long delay stays > 100 ms after link returns
+              (FIFO ~7 s, others ~0 ms).  Whole-run SLA FAILS for everyone - packets sent
+              during the outage are unavoidably delayed up to 2 s.
+
+ TC5  FAILURE - CAPACITY DEGRADES TO 35 % (t = 6..14 s)
+      python3 run_simulation.py --scenario tc5
+      Expect: EPS and PQ keep emergency+voice PASS (video degrades: unavoidable);
+              WFQ/DRR voice FAIL; FIFO everything FAIL.
+
+ TC6  ATTACK - BULK FLOW FALSELY MARKED EMERGENCY (8 Mbit/s)
+      python3 run_simulation.py --scenario tc6
+      Expect: PQ/WFQ/DRR emergency FAIL (PQ also kills video: 50 % loss);
+              EPS PASS everything (policer re-marks the flood to best effort;
+              "demotions" counter ~15000).
+
+ TC7  NOISY MARKINGS + CLASSIFIER ABLATION
+      python3 run_simulation.py --scenario tc7
+      python3 run_simulation.py --scenario ablation
+      Expect: accuracy dscp 85.9 % < header 88.3 % < dscp+port 98.5 % < stateless 99.7 %
+              < full (with flow cache) 100 %; emergency loss 0 % only for stateless/full.
+
+ TC8  STARVATION - 90 VOICE CALLS (7.6 Mbit/s)
+      python3 run_simulation.py --scenario tc8
+      Expect: PQ best-effort throughput ~15 kbit/s and video loss ~39 % (starvation);
+              EPS video loss ~0 % and BE ~150 kbit/s (voice above its 35 % cap is demoted).
+
+ TC9  LOSSY LINK (2 % RANDOM LOSS)
+      python3 run_simulation.py --scenario tc9
+      Expect: ~2 % loss in every class and every scheduler, delay unaffected
+              (SLA loss targets therefore FAIL by design: scheduling cannot cure link loss).
+
+ TC10 LOAD SWEEP (bulk load 1..15 Mbit/s)
+      python3 run_simulation.py --scenario sweep
+      Expect: FIFO emergency p99 rises 36 -> 105 ms; QoS schedulers stay flat (6-10 ms).
+
+   The same checks are automated:  python3 -m unittest -v tests.test_qos
+   (every TCx has a test_tcx_* method with assertions; unit tests cover protocol,
+    classifier, FIFO/PQ/WFQ/DRR/EPS behaviour and the link model.)
+
+-------------------------------------------------------------------------------------
+3. WIRESHARK / PACKET-LEVEL VERIFICATION
+-------------------------------------------------------------------------------------
+ a) Create captures from the simulator:
+      python3 run_simulation.py --scenario tc2 --quiet --pcap results/tc2_eps.pcap  --pcap-scheduler eps
+      python3 run_simulation.py --scenario tc2 --quiet --pcap results/tc2_fifo.pcap --pcap-scheduler fifo
+ b) Automatic verification (no Wireshark needed):
+      python3 tools/pcap_verify.py results/tc2_eps.pcap
+      python3 tools/pcap_verify.py results/tc2_fifo.pcap --by-flow
+    Expect: EPS -> emergency mean ~0.6 ms vs best-effort ~106 ms, "PRIORITY HONOURED";
+            FIFO -> all classes ~95 ms, "NO PRIORITY EFFECT".  Header errors: 0.
+ c) Open in Wireshark with the custom dissector:
+      wireshark -X lua_script:docs/qep_dissector.lua results/tc2_eps.pcap
+    (or copy docs/qep_dissector.lua into the Wireshark plugins folder).
+    Display filters:  qep    qep.cls == 0    ip.dsfield.dscp == 48    qep.flags.alert == 1
+    Inspect: IP DSCP bits, QEP class/flow/seq/timestamp; compare Time column with qep.ts_ns.
+ d) Capturing the live demo: start Wireshark on the loopback interface (Linux "lo",
+    Windows "Npcap Loopback Adapter"), capture filter "udp", run section 4, then
+    save as pcap and run tools/pcap_verify.py on it.
+    (On loopback the router leg (ports 6004,6006,6911,6201) and the receiver leg
+     (5004,5006,5911,5201) both appear; pcap_verify analyses the receiver leg by default.)
+
+-------------------------------------------------------------------------------------
+4. LIVE DEMO WITH REAL UDP SOCKETS (software QoS router, 1 Mbit/s bottleneck)
+-------------------------------------------------------------------------------------
+      python3 live/run_live_demo.py                      # fifo, pq, wfq, eps  (~50 s)
+      python3 live/run_live_demo.py --schedulers fifo,eps --duration 8
+      python3 live/run_live_demo.py --scenario spoof --schedulers fifo,pq,eps
+ Expect (offered load ~190 %): FIFO emergency/voice p99 ~200 ms and FAIL; PQ/WFQ/EPS p99
+ ~12-15 ms and PASS.  With --scenario spoof, PQ fails emergency (~30 ms p99, ~0.6 % loss)
+ while EPS stays PASS.  Numbers vary a few ms between runs.
+
+ Separate terminals (manual operation, three roles on one machine):
+   T1: python3 live/receiver.py --bind 127.0.0.1 --duration 30 --log /tmp/recv.json
+   T2: python3 live/qos_router.py --scheduler eps --rate-kbps 1000 --out 127.0.0.1 --duration 30
+   T3: python3 live/traffic_sender.py --cls emergency --dest 127.0.0.1 --port-offset 1000 \
+          --duration 20 --flows 5 --event 5,5,20 --log /tmp/sent_emergency.json
+       python3 live/traffic_sender.py --cls best_effort --dest 127.0.0.1 --port-offset 1000 \
+          --duration 20 --kbps 1500 --log /tmp/sent_be.json
+   Then: python3 live/analyze.py --sent "/tmp/sent_*.json" --recv /tmp/recv.json
+
+-------------------------------------------------------------------------------------
+5. WEB DASHBOARD
+-------------------------------------------------------------------------------------
+      python3 dashboard/server.py --port 8080
+   Open http://localhost:8080 -> choose a test case -> "Run simulation".
+   Shows SLA PASS/FAIL per scheduler, p99 delay / loss / throughput charts and the
+   emergency-delay timeline (hover a FAIL cell for the violated limits).  Ctrl-C to stop.
+
+-------------------------------------------------------------------------------------
+6. MININET EMULATION (Linux, root; optional)
+-------------------------------------------------------------------------------------
+   sudo apt install mininet openvswitch-switch tcpdump
+   sudo python3 mininet/mn_qos_topo.py --modes fifo,prio,htb --duration 20
+   Options: --bulk-kbps 12000 (default, overloads the 10 Mbit/s bottleneck), --cli
+   What it does: builds h_voice/h_video/h_emerg/h_bulk - s1 - r1 - s2 - h_srv, shapes
+   r1-eth2 to 10 Mbit/s with tc:  fifo = tbf+FIFO,  prio = tbf+4-band strict priority,
+   htb = HTB classes (emergency 2M cap, voice 3.5M cap, video 3M, bulk 1.5M) classified
+   by DSCP (u32 match ip tos).  Senders mark DSCP in the IP header; results are printed
+   with the same metrics as the simulator; tcpdump saves results/mn_<mode>_r1-eth2.pcap
+   -> run tools/pcap_verify.py on it or open in Wireshark.
+   Expect: fifo fails emergency/voice SLA; prio and htb pass.
+   Clean up after a crash: sudo mn -c
+   NOTE: this script was not run in the authoring environment (needs root + Mininet).
+
+-------------------------------------------------------------------------------------
+7. USEFUL OPTIONS / TROUBLESHOOTING
+-------------------------------------------------------------------------------------
+   --seed N       different random traffic (results are deterministic per seed)
+   --duration S   shorter runs for quick demos, e.g. --duration 8
+   Port in use    : change nothing - stop the previous demo (Ctrl-C) or wait 2 s.
+   Windows        : DSCP bits may be ignored by the OS; the live router classifies by the
+                    QEP header + port, so the demo still works.
+   Loopback timing: the live demo uses a software rate limiter; close CPU-heavy programs
+                    for stable numbers.
+   Mininet errors : sudo mn -c   then re-run; make sure tcpdump and ethtool exist.
+=====================================================================================

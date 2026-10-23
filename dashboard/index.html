@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>QoS Emergency Prioritization Dashboard</title>
+    <style>
+        :root{color-scheme:light;--ink:#172b3a;--muted:#607481;--line:#d7e0e5;--paper:#f2f6f7;--panel:#fff;--teal:#087f83;--orange:#d45d35}
+        *{box-sizing:border-box}body{font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;max-width:1120px;margin:28px auto;padding:0 20px;background:var(--paper);color:var(--ink)}
+        header{display:flex;justify-content:space-between;align-items:end;border-bottom:2px solid var(--ink);padding-bottom:16px;margin-bottom:18px}
+        h1{font:600 24px/1.2 system-ui,sans-serif;margin:0;letter-spacing:-.03em}header p{margin:6px 0 0;color:var(--muted);font:13px system-ui,sans-serif}
+        .eyebrow{font-size:10px;letter-spacing:.15em;color:var(--teal);font-weight:bold;text-transform:uppercase}.tabs{display:flex;gap:6px;margin:0 0 14px}
+        button,select,input{font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:4px;background:white;color:var(--ink)}button{cursor:pointer}
+        .tab{background:transparent;border-color:transparent;color:var(--muted)}.tab.active{background:var(--ink);color:#fff}.primary{background:var(--teal);border-color:var(--teal);color:white;font-weight:bold}.live-primary{background:var(--orange);border-color:var(--orange)}
+        .controls,.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;margin-bottom:14px}.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+        .controls label{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px}.controls select{min-width:250px}.controls input[type=number]{width:90px}#liveSchedulers{min-width:115px;height:126px;padding:4px}
+        .hint,#desc{color:var(--muted);font:13px/1.5 system-ui,sans-serif}.hint{margin-left:auto}#desc{margin:0 0 12px}
+        #st{font-size:12px;color:var(--muted)}#st.busy{color:var(--orange)}#st.error{color:#a92822}
+        table{border-collapse:collapse;width:100%;margin:10px 0 16px;background:white;font-size:12px}td,th{border:1px solid var(--line);padding:8px 10px;text-align:left}th{background:#eaf0f2;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em}td.ok{background:#e3f4eb;color:#176343}td.bad{background:#fce9e4;color:#a33e27}
+        .charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.chart{width:100%;height:auto;border:1px solid var(--line);border-radius:5px;background:white}
+        [hidden]{display:none!important}@media(max-width:720px){body{padding:0 12px;margin:16px auto}header{align-items:start;gap:12px;flex-direction:column}.charts{grid-template-columns:1fr}.hint{margin:0;width:100%}}
+    </style>
+</head>
+
+<body>
+    <header><div><div class="eyebrow">Network resilience lab / QoS</div><h1>Emergency traffic prioritization</h1><p>Compare repeatable simulations with real UDP traffic through the software router.</p></div><div id="st"></div></header>
+    <nav class="tabs" aria-label="Dashboard view"><button class="tab active" id="simTab" onclick="showView('sim')">Simulation</button><button class="tab" id="liveTab" onclick="showView('live')">Live demo</button></nav>
+    <section id="simControls" class="controls"><label>Test case <select id="sc"></select></label><button class="primary" onclick="run()">Run simulation</button><span class="hint">Deterministic discrete-event model</span></section>
+    <section id="liveControls" class="controls" hidden><label>Traffic profile <select id="liveScenario"><option value="congestion">Congestion</option><option value="spoof">Spoofed emergency flood</option></select></label><label>Duration (s) <input id="liveDuration" type="number" value="6" min="1" max="30"></label><label>Schedulers <select id="liveSchedulers" multiple size="5" title="Hold Ctrl or Command to select multiple"><option value="fifo" selected>FIFO</option><option value="pq" selected>Strict PQ</option><option value="wfq" selected>WFQ</option><option value="drr" selected>DRR</option><option value="eps" selected>EPS</option></select></label><button class="primary live-primary" onclick="runLive()">Run live demo</button><span class="hint">Real loopback UDP / 1 Mbit/s software router</span></section>
+    <div id="resultTitle" class="eyebrow"></div><div id="desc"></div>
+    <div id="sla"></div>
+    <div class="charts"><canvas class="chart" id="c1" width="520" height="300"></canvas><canvas class="chart" id="c2" width="520" height="300"></canvas>
+    <canvas class="chart" id="c3" width="520" height="300"></canvas><canvas class="chart" id="c4" width="520" height="300"></canvas></div>
+    <script>
+        const COL = { fifo: '#9aa5b1', pq: '#e07a5f', wfq: '#3d85c6', drr: '#6aa84f', eps: '#8e44ad' };
+        const LAB = { fifo: 'FIFO', pq: 'Strict PQ', wfq: 'WFQ', drr: 'DRR', eps: 'EPS' };
+        const CL = ['emergency', 'voice', 'video', 'best_effort'];
+        fetch('/api/scenarios').then(r => r.json()).then(j => {
+            const s = document.getElementById('sc');
+            for (const k in j) { const o = document.createElement('option'); o.value = k; o.textContent = j[k].title; s.appendChild(o); } s.value = 'tc2';
+        });
+        function bars(id, title, get, log) {
+            const c = document.getElementById(id), g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
+            const runs = window.R.runs, sch = Object.keys(runs), W = c.width, H = c.height, ml = 48, mb = 48, mt = 28, pw = W - ml - 10, ph = H - mt - mb;
+            let vals = []; sch.forEach(s => CL.forEach(k => vals.push(get(runs[s].summary[k])))); let mx = Math.max(...vals, 1e-9);
+            const f = v => log ? Math.max(0, Math.log10(Math.max(v, .1)) + 1) / (Math.log10(Math.max(mx, 10)) + 1) : v / (mx * 1.1);
+            g.font = 'bold 13px sans-serif'; g.fillStyle = '#222'; g.fillText(title, ml, 16); g.font = '11px sans-serif';
+            for (let i = 0; i <= 4; i++) {
+                const y = mt + ph * (1 - i / 4); g.strokeStyle = '#eee'; g.beginPath(); g.moveTo(ml, y); g.lineTo(W - 10, y); g.stroke();
+                const v = log ? Math.pow(10, (i / 4) * (Math.log10(Math.max(mx, 10)) + 1) - 1) : mx * 1.1 * i / 4; g.fillStyle = '#555'; g.fillText(v.toPrecision(3), 2, y + 4);
+            }
+            const gw = pw / CL.length, bw = gw * .8 / sch.length;
+            CL.forEach((k, ci) => {
+                g.fillStyle = '#333'; g.fillText(k, ml + ci * gw + gw / 2 - 20, H - mb + 14);
+                sch.forEach((s, si) => { const v = get(runs[s].summary[k]), h = ph * f(v); g.fillStyle = COL[s]; g.fillRect(ml + ci * gw + gw * .1 + si * bw, mt + ph - h, bw, h); });
+            });
+            sch.forEach((s, i) => { g.fillStyle = COL[s]; g.fillRect(ml + i * 90, H - 18, 10, 10); g.fillStyle = '#333'; g.fillText(LAB[s], ml + i * 90 + 13, H - 9); });
+        }
+        function line(id) {
+            const c = document.getElementById(id), g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
+            const runs = window.R.runs, sch = Object.keys(runs), W = c.width, H = c.height, ml = 48, mb = 48, mt = 28, pw = W - ml - 10, ph = H - mt - mb;
+            let pts = []; sch.forEach(s => runs[s].timeline.emergency.forEach(p => pts.push(p))); if (!pts.length) return;
+            const xmax = Math.max(...pts.map(p => p[0]), .001), ymax = Math.max(...pts.map(p => p[1]), 10), L = v => Math.log10(Math.max(v, 1)) / Math.log10(Math.max(ymax, 10));
+            g.font = 'bold 13px sans-serif'; g.fillStyle = '#222'; g.fillText('Emergency delay over time (ms, log)', ml, 16); g.font = '11px sans-serif';
+            for (let i = 0; i <= 3; i++) {
+                const y = mt + ph * (1 - i / 3); g.strokeStyle = '#eee'; g.beginPath(); g.moveTo(ml, y); g.lineTo(W - 10, y); g.stroke();
+                g.fillStyle = '#555'; g.fillText(Math.pow(10, i / 3 * Math.log10(Math.max(ymax, 10))).toFixed(0), 8, y + 4);
+            }
+            sch.forEach((s, i) => {
+                g.strokeStyle = COL[s]; g.lineWidth = 2; g.beginPath(); runs[s].timeline.emergency.forEach((p, j) => {
+                    const x = ml + pw * p[0] / xmax, y = mt + ph * (1 - L(p[1])); j ? g.lineTo(x, y) : g.moveTo(x, y);
+                }); g.stroke();
+                g.fillStyle = COL[s]; g.fillRect(ml + i * 90, H - 18, 10, 10); g.fillStyle = '#333'; g.fillText(LAB[s], ml + i * 90 + 13, H - 9);
+            }); g.lineWidth = 1;
+            g.fillStyle = '#555'; g.fillText('time (s)', W / 2 - 15, H - 30);
+        }
+        function showView(view) {
+            const live = view === 'live';
+            document.getElementById('simControls').hidden = live;
+            document.getElementById('liveControls').hidden = !live;
+            document.getElementById('simTab').classList.toggle('active', !live);
+            document.getElementById('liveTab').classList.toggle('active', live);
+        }
+        function status(message, state) {
+            const el = document.getElementById('st'); el.textContent = message;
+            el.className = state || '';
+        }
+        async function request(url) {
+            const response = await fetch(url), data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Request failed');
+            return data;
+        }
+        function render(data) {
+            window.R = data;
+            document.getElementById('resultTitle').textContent = data.source === 'live' ? data.title : 'Simulation · ' + data.title;
+            document.getElementById('desc').textContent = data.desc;
+            let h = '<table><tr><th>Scheduler</th><th>Emergency</th><th>Voice</th><th>Video</th><th>Recovery</th></tr>';
+            for (const s in data.runs) {
+                const x = data.runs[s]; h += '<tr><td>' + LAB[s] + '</td>';
+                ['emergency', 'voice', 'video'].forEach(k => { const v = x.sla[k]; h += '<td class="' + (v.pass ? 'ok' : 'bad') + '" title="' + v.violations.join('; ') + '">' + (v.pass ? 'PASS' : 'FAIL') + '</td>'; });
+                h += '<td>' + (x.recovery_ms !== undefined ? x.recovery_ms.toFixed(0) + ' ms' : '-') + '</td></tr>';
+            }
+            h += '</table>';
+            if (data.source === 'live') {
+                h += '<div class="eyebrow">Software router packet counters</div><table><tr><th>Scheduler</th><th>Class</th><th>Ingress packets</th><th>Egress packets</th><th>Dropped</th></tr>';
+                for (const s in data.runs) for (const c in data.runs[s].router) {
+                    const m = data.runs[s].router[c];
+                    h += '<tr><td>' + LAB[s] + '</td><td>' + c + '</td><td>' + m.in + '</td><td>' + m.out + '</td><td>' + m.dropped + '</td></tr>';
+                }
+                h += '</table>';
+            }
+            document.getElementById('sla').innerHTML = h;
+            bars('c1', 'p99 delay (ms, log)', m => m.delay_p99_ms, true); bars('c2', 'Loss (%)', m => m.loss_pct, false);
+            bars('c3', 'Throughput (kbit/s)', m => m.throughput_kbps, false); line('c4');
+        }
+        async function run() {
+            status('Running simulation…', 'busy');
+            try { render(await request('/api/run?scenario=' + encodeURIComponent(document.getElementById('sc').value))); status('Simulation complete'); }
+            catch (error) { status(error.message, 'error'); }
+        }
+        async function runLive() {
+            const selected = Array.from(document.querySelectorAll('#liveSchedulers option:checked')).map(o => o.value);
+            if (!selected.length) { status('Select at least one scheduler', 'error'); return; }
+            const params = new URLSearchParams({scenario: document.getElementById('liveScenario').value,
+                duration: document.getElementById('liveDuration').value, schedulers: selected.join(',')});
+            status('Running real UDP traffic… this can take a while', 'busy');
+            try { render(await request('/api/live?' + params)); status('Live run complete'); }
+            catch (error) { status(error.message, 'error'); }
+        }
+    </script>
+</body>
+
+</html>

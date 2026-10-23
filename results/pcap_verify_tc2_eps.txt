@@ -1,0 +1,8 @@
+QEP packets analysed: 16246   header errors: 0   DSCP/class mismatches: 0
+class         packets      mean ms       p99 ms       max ms
+emergency        2143         0.58         1.31         1.42
+voice            9437         0.76         1.57         1.88
+video            3372        12.55        59.38        69.41
+best_effort      1294       106.21       156.85       164.19
+
+VERDICT: emergency mean delay 0.58 ms vs best-effort 106.21 ms -> PRIORITY HONOURED

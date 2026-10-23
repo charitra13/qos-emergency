@@ -1,0 +1,8 @@
+QEP packets analysed: 15233   header errors: 0   DSCP/class mismatches: 0
+class         packets      mean ms       p99 ms       max ms
+emergency        2081        95.65       100.55       101.17
+voice            9142        95.77       100.42       101.12
+video            2348        94.90       100.80       100.99
+best_effort      1662        96.48       100.98       101.15
+
+VERDICT: emergency mean delay 95.65 ms vs best-effort 96.48 ms -> NO PRIORITY EFFECT (FIFO-like behaviour)

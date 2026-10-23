@@ -1,0 +1,5 @@
+# The whole project runs on the Python 3.8+ standard library - nothing to install.
+# Optional, only for the Mininet emulation (Linux, root):
+#   sudo apt install mininet openvswitch-switch tcpdump
+# Optional, for packet-level inspection:
+#   Wireshark / tshark (docs/qep_dissector.lua decodes the QEP header)

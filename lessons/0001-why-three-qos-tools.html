@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Why this QoS project has three ways to see results</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1c2633;
+      --muted: #526174;
+      --blue: #165d8f;
+      --pale: #eef5f8;
+      --line: #d5e0e7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #f4f7f9;
+      color: var(--ink);
+      font: 16px/1.65 system-ui, -apple-system, sans-serif;
+    }
+
+    main {
+      max-width: 850px;
+      margin: 40px auto;
+      padding: 42px 52px;
+      background: white;
+      box-shadow: 0 8px 30px #24374612;
+    }
+
+    h1,
+    h2 {
+      line-height: 1.2;
+      letter-spacing: -.025em;
+    }
+
+    h1 {
+      font-size: 2.15rem;
+      margin: 0 0 12px;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      margin: 30px 0 8px;
+    }
+
+    p {
+      margin: 10px 0;
+    }
+
+    .dek,
+    .small {
+      color: var(--muted);
+    }
+
+    .callout {
+      margin: 22px 0;
+      padding: 18px 22px;
+      border-left: 4px solid var(--blue);
+      background: var(--pale);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 20px 0;
+    }
+
+    .card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .card b {
+      color: var(--blue);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f5f8fa;
+    }
+
+    button {
+      border: 0;
+      border-radius: 7px;
+      padding: 10px 15px;
+      background: var(--blue);
+      color: white;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    #feedback {
+      min-height: 1.7em;
+      font-weight: 600;
+    }
+
+    a {
+      color: var(--blue);
+    }
+
+    @media(max-width:650px) {
+      main {
+        margin: 0;
+        padding: 26px 20px;
+      }
+
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 1.75rem;
+      }
+    }
+
+    @media print {
+      body {
+        background: white;
+      }
+
+      main {
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <p class="small">QoS emergency project · 4 minute lesson</p>
+    <h1>Why have a simulation, a live demo, and a dashboard?</h1>
+    <p class="dek">They answer different questions about one idea: when a network link is overloaded, can emergency
+      packets still get through quickly and reliably?</p>
+
+    <div class="callout"><b>The short answer:</b> simulation helps you explore many controlled “what ifs”; the live demo
+      checks the code with real packets and sockets; the dashboard helps people compare and understand results. Together
+      they make the claim easier to test, trust, and explain.</div>
+
+    <h2>Start with the problem</h2>
+    <p>Imagine an emergency alarm, a voice call, video, and a large file all sharing a narrow network link. If the link
+      is full, packets must wait or be dropped. A basic FIFO queue treats them alike. QoS (Quality of Service) gives
+      important traffic preferential treatment, while trying to keep lower-priority traffic usable too.</p>
+    <p>“Why is this needed?” Because normal conditions can hide the problem. The project’s own notes say FIFO can meet
+      the targets at ordinary load; congestion, outages, false emergency markings, and overload reveal whether
+      prioritization actually helps.</p>
+
+    <h2>Three tools, three jobs</h2>
+    <div class="flow">
+      <div class="card"><b>1 · Simulation = explore</b>Change the scenario and compare schedulers under repeatable
+        conditions. Useful for many cases: congestion, link failure, spoofing, starvation, or a load sweep.</div>
+      <div class="card"><b>2 · Live demo = check reality</b>Real UDP senders, a software QoS router, and a receiver
+        exchange packets on the machine. This checks socket handling and queue behavior outside the simulator.</div>
+      <div class="card"><b>3 · Dashboard = understand</b>Choose a scenario and see scheduler results as SLA verdicts,
+        charts, and an emergency-delay timeline. It presents simulation output; it is not a separate network experiment.
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>View</th>
+          <th>What it answers</th>
+          <th>What to look at</th>
+          <th>Limit</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Simulation</td>
+          <td>“What happens if we change the traffic or failure?”</td>
+          <td>Compare FIFO, PQ, WFQ, DRR, and EPS on p99 delay, loss, throughput, and SLA.</td>
+          <td>It follows the simulator’s model; it cannot prove behavior of every real OS or network.</td>
+        </tr>
+        <tr>
+          <td>Live demo</td>
+          <td>“Does the implementation work with actual packets moving through it?”</td>
+          <td>Emergency/voice delay and loss during overload; compare schedulers, optionally add a spoofed flow.</td>
+          <td>It runs on loopback with a software rate limiter, so results vary with machine timing and are not a field
+            deployment.</td>
+        </tr>
+        <tr>
+          <td>Dashboard</td>
+          <td>“Can I see the comparison and explain the result quickly?”</td>
+          <td>PASS/FAIL by class, p99 delay, loss, throughput, and emergency delay over time.</td>
+          <td>It runs the simulator through a web page; a chart is only as good as the data and model behind it.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Why not use just one?</h2>
+    <p>A simulation is controlled and repeatable, so you can test more edge cases cheaply. A live demo uses real
+      operating-system networking, so it can catch issues the model leaves out. A dashboard makes the evidence legible
+      to someone who does not want to read raw terminal output. These are complementary checks, not three independent
+      proofs.</p>
+    <p>There is also an optional fourth layer: Mininet emulation. It uses Linux network namespaces and virtual links to
+      run real networking code in a virtual topology. In this project, it is an extra, Linux-only experiment; the
+      instructions say it was not run in the authoring environment. Mininet’s own overview describes it as a network
+      emulator using virtual hosts, switches, and links. <a href="https://mininet.org/overview/">Mininet overview</a>.
+    </p>
+
+    <h2>A useful way to present the project</h2>
+    <p>Tell the story in this order: <b>problem → controlled evidence → implementation check → readable comparison.</b>
+      For example, show TC2 congestion in the dashboard, explain that FIFO’s emergency p99 delay rises while priority
+      schedulers keep it low, then run the live demo to show the same broad behavior with real UDP traffic. Be precise
+      that the live demo is local software networking, not a real disaster network.</p>
+
+    <h2>Quick practice</h2>
+    <p>Suppose someone asks, “Does the dashboard itself prove EPS works?” Choose the best answer:</p>
+    <label><input type="radio" name="q" value="a"> Yes. A clear chart is proof that the router works in the real
+      world.</label><br>
+    <label><input type="radio" name="q" value="b"> No. It visualizes simulation results; use the live demo as an
+      additional implementation check, and state each tool’s limits.</label><br><br>
+    <button onclick="check()">Check answer</button>
+    <p id="feedback" aria-live="polite"></p>
+    <p class="small">For a quick refresher, open <a href="../reference/qos-three-tools.html">Three tools at a
+        glance</a>. Ask me follow-up questions about any chart or scenario.</p>
+    <h2>Sources</h2>
+    <ul>
+      <li>This project’s <a href="../README.md">README</a> and <a href="../instructions.txt">run instructions</a>
+        describe its scenarios, live demo, dashboard, and limitations.</li>
+      <li><a href="https://www.nsnam.org/docs/release/3.45/tutorial/ns-3-tutorial.pdf">ns-3 tutorial</a> introduces
+        discrete-event network simulation as a way to model network behavior for research and education.</li>
+      <li><a href="https://mininet.org/overview/">Mininet overview</a> explains network emulation using virtual hosts,
+        switches, and links.</li>
+      <li><a href="https://grafana.com/docs/grafana/latest/visualizations/">Grafana visualization documentation</a>
+        describes dashboards as panels that turn data into at-a-glance visualizations. This project’s dashboard is a
+        simpler custom page, but serves a similar presentation role.</li>
+    </ul>
+  </main>
+  <script>
+    function check() {
+      const v = document.querySelector('input[name="q"]:checked');
+      const f = document.getElementById('feedback');
+      if (!v) { f.textContent = 'Pick an answer first.'; f.style.color = '#9a5b00'; return; }
+      if (v.value === 'b') { f.textContent = 'Correct. The dashboard is a view of simulation output, not a live-network proof.'; f.style.color = '#236b3b'; }
+      else { f.textContent = 'Not quite. A chart communicates evidence; it does not create a real-network experiment.'; f.style.color = '#a12d2d'; }
+    }
+  </script>
+</body>
+
+</html>
