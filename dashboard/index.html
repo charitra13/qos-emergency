@@ -1,132 +1,777 @@
 <!doctype html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="utf-8">
-    <title>QoS Emergency Prioritization Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Emergency QoS Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
     <style>
-        :root{color-scheme:light;--ink:#172b3a;--muted:#607481;--line:#d7e0e5;--paper:#f2f6f7;--panel:#fff;--teal:#087f83;--orange:#d45d35}
-        *{box-sizing:border-box}body{font-family:ui-monospace,"SFMono-Regular",Consolas,monospace;max-width:1120px;margin:28px auto;padding:0 20px;background:var(--paper);color:var(--ink)}
-        header{display:flex;justify-content:space-between;align-items:end;border-bottom:2px solid var(--ink);padding-bottom:16px;margin-bottom:18px}
-        h1{font:600 24px/1.2 system-ui,sans-serif;margin:0;letter-spacing:-.03em}header p{margin:6px 0 0;color:var(--muted);font:13px system-ui,sans-serif}
-        .eyebrow{font-size:10px;letter-spacing:.15em;color:var(--teal);font-weight:bold;text-transform:uppercase}.tabs{display:flex;gap:6px;margin:0 0 14px}
-        button,select,input{font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:4px;background:white;color:var(--ink)}button{cursor:pointer}
-        .tab{background:transparent;border-color:transparent;color:var(--muted)}.tab.active{background:var(--ink);color:#fff}.primary{background:var(--teal);border-color:var(--teal);color:white;font-weight:bold}.live-primary{background:var(--orange);border-color:var(--orange)}
-        .controls,.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;margin-bottom:14px}.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-        .controls label{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px}.controls select{min-width:250px}.controls input[type=number]{width:90px}#liveSchedulers{min-width:115px;height:126px;padding:4px}
-        .hint,#desc{color:var(--muted);font:13px/1.5 system-ui,sans-serif}.hint{margin-left:auto}#desc{margin:0 0 12px}
-        #st{font-size:12px;color:var(--muted)}#st.busy{color:var(--orange)}#st.error{color:#a92822}
-        table{border-collapse:collapse;width:100%;margin:10px 0 16px;background:white;font-size:12px}td,th{border:1px solid var(--line);padding:8px 10px;text-align:left}th{background:#eaf0f2;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em}td.ok{background:#e3f4eb;color:#176343}td.bad{background:#fce9e4;color:#a33e27}
-        .charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.chart{width:100%;height:auto;border:1px solid var(--line);border-radius:5px;background:white}
-        [hidden]{display:none!important}@media(max-width:720px){body{padding:0 12px;margin:16px auto}header{align-items:start;gap:12px;flex-direction:column}.charts{grid-template-columns:1fr}.hint{margin:0;width:100%}}
+        :root {
+            color-scheme: light;
+            --bg: #F3F1EC; --surface: #FFFFFF; --sunk: #ECE9E2; --line: #E2DED5; --line-2: #CFCAC0;
+            --ink: #1E1D1B; --ink-2: #3A3834; --muted: #625E56; --faint: #8F8A80;
+            --accent: #C0500F; --accent-ink: #9C3F0A; --accent-soft: #E58A55;
+            --pass: #2D6A4C; --pass-wash: #E4EFE8; --fail: #B3261E; --fail-wash: #F8E3DF;
+            --s-fifo: #8C867D; --s-pq: #B08332; --s-wfq: #3D6B8A; --s-drr: #5B8769; --s-eps: #C0500F;
+            --sans: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+            --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+            --r-lg: 18px; --r: 12px;
+            --shadow: 0 1px 0 rgba(40, 32, 20, .04), 0 18px 40px -26px rgba(60, 44, 24, .28);
+            --ease: cubic-bezier(.16, 1, .3, 1);
+        }
+        *, *::before, *::after { box-sizing: border-box }
+        body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.5 var(--sans); -webkit-font-smoothing: antialiased }
+        h1, h2, h3, p, figure { margin: 0 }
+        button, input { font: inherit; color: inherit }
+        button { cursor: pointer; touch-action: manipulation }
+        :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px }
+        [hidden] { display: none !important }
+        .i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none }
+        .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; flex: none }
+        .skip { position: absolute; left: 16px; top: -60px; z-index: 40; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 10px }
+        .skip:focus { top: 12px }
+
+        /* top bar */
+        .top { position: sticky; top: 0; z-index: 20; background: var(--bg); border-bottom: 1px solid var(--line) }
+        .top-in { max-width: 1440px; margin: 0 auto; padding: 12px 28px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 20px }
+        .brand { display: flex; align-items: center; gap: 12px; min-width: 0 }
+        .mark { width: 34px; height: 34px; flex: none }
+        .brand-name { display: block; font-weight: 700; font-stretch: 115%; font-size: 17px; line-height: 1.15; letter-spacing: -.01em }
+        .brand-sub { display: block; font: 500 12px/1.3 var(--mono); color: var(--muted) }
+        .seg { position: relative; display: grid; grid-template-columns: 1fr 1fr; background: var(--sunk); border: 1px solid var(--line); border-radius: 999px; padding: 4px }
+        .seg button { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 20px; border: 0; border-radius: 999px; background: none; font-weight: 600; font-size: 14px; color: var(--muted); transition: color .2s }
+        .seg button[aria-pressed="true"] { color: var(--ink) }
+        .seg-thumb { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); border-radius: 999px; background: var(--surface); box-shadow: 0 1px 2px rgba(40, 32, 20, .08), 0 6px 14px -8px rgba(40, 32, 20, .3); transition: transform .4s var(--ease) }
+        .seg[data-mode="live"] .seg-thumb { transform: translateX(100%) }
+        .status { justify-self: end; display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font: 500 13px var(--mono); color: var(--muted); white-space: nowrap }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint) }
+        .status[data-state="busy"] .status-dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite }
+        .status[data-state="ok"] .status-dot { background: var(--pass) }
+        .status[data-state="error"] { color: var(--fail) }
+        .status[data-state="error"] .status-dot { background: var(--fail) }
+        @keyframes pulse { 50% { opacity: .35; transform: scale(.75) } }
+
+        /* layout + rail */
+        .layout { max-width: 1440px; margin: 0 auto; padding: 32px 28px 80px; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 40px; align-items: start }
+        .rail { position: sticky; top: 92px; max-height: calc(100dvh - 108px); overflow: auto; padding: 2px 4px 8px 2px }
+        .rail-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px }
+        .rail-head h2, .field legend, .lbl, .legend-label { font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted) }
+        .rail-head span { font: 500 12px var(--mono); color: var(--muted) }
+        .rail-note { margin-top: 8px; font-size: 14px; color: var(--muted); line-height: 1.45 }
+        .cases { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 4px }
+        .case { width: 100%; display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; text-align: left; padding: 10px 12px; border: 1px solid transparent; border-radius: var(--r); background: none; transition: background-color .2s, border-color .2s, box-shadow .2s, transform .15s var(--ease) }
+        .case:hover { background: rgba(255, 255, 255, .65); border-color: var(--line) }
+        .case:active { transform: scale(.985) }
+        .case[aria-current="true"] { background: var(--surface); border-color: var(--line-2); box-shadow: var(--shadow) }
+        .case-code { min-width: 42px; margin-top: 1px; padding: 5px 6px; border-radius: 7px; background: var(--sunk); font: 600 12px/1.2 var(--mono); text-align: center; color: var(--ink-2); transition: background-color .2s, color .2s }
+        .case[aria-current="true"] .case-code { background: var(--ink); color: #fff }
+        .case-name { display: block; font-weight: 600; font-size: 15px; line-height: 1.3 }
+        .case-detail { display: block; margin-top: 2px; font-size: 13px; line-height: 1.35; color: var(--muted) }
+        .live-form { border: 0; margin: 0; padding: 0; min-width: 0 }
+        .field { border: 0; margin: 22px 0 0; padding: 0; min-width: 0 }
+        .field legend { padding: 0; margin-bottom: 10px }
+        .opt { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); cursor: pointer; transition: border-color .2s, box-shadow .2s }
+        .opt + .opt { margin-top: 8px }
+        .opt:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink) }
+        .opt input { width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--ink) }
+        .opt b { display: block; font-weight: 650; font-size: 15px }
+        .opt small { display: block; margin-top: 2px; font-size: 13px; line-height: 1.4; color: var(--muted) }
+        .field-row { display: flex; justify-content: space-between; align-items: baseline }
+        output { font: 600 15px var(--mono) }
+        input[type="range"] { width: 100%; height: 28px; margin: 6px 0 0; accent-color: var(--ink); cursor: pointer }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px }
+        .chip { position: relative }
+        .chip input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer }
+        .chip span { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 8px 13px; border: 1px solid var(--ink); border-radius: 999px; background: var(--ink); color: #fff; font-weight: 600; font-size: 14px; transition: background-color .2s, color .2s, border-color .2s }
+        .chip .ck { width: 14px; height: 14px }
+        .chip input:not(:checked) + span { background: var(--surface); color: var(--muted); border-color: var(--line-2); border-style: dashed }
+        .chip input:not(:checked) + span .ck { display: none }
+        .chip input:not(:checked) + span .sw { opacity: .4 }
+        .chip input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px }
+        .helper { margin-top: 10px; font-size: 13px; color: var(--muted) }
+        .field-error { margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--fail) }
+        .btn-primary { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 50px; margin-top: 22px; padding: 12px 18px; border: 0; border-radius: 13px; background: var(--ink); color: #fff; font-weight: 650; font-size: 15px; transition: background-color .2s, transform .15s var(--ease) }
+        .btn-primary:hover { background: #34322E }
+        .btn-primary:active { transform: translateY(1px) scale(.99) }
+        .btn-primary:disabled { opacity: .6; cursor: progress }
+        .btn-primary .i { color: var(--accent-soft) }
+        .capture { margin-top: 18px; font-size: 13px; color: var(--muted) }
+        .capture code { display: inline-block; margin-top: 4px; padding: 3px 7px; border-radius: 6px; background: var(--sunk); font: 500 12px var(--mono); color: var(--ink-2) }
+        .live-form:disabled .opt, .live-form:disabled .chip, .live-form:disabled input { cursor: not-allowed }
+        .live-form:disabled .opt, .live-form:disabled .chips, .live-form:disabled input[type="range"] { opacity: .6 }
+
+        /* main */
+        .eyebrow { display: flex; align-items: center; gap: 10px; font: 600 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent-ink) }
+        .eyebrow::before { content: ""; width: 18px; height: 2px; border-radius: 2px; background: var(--accent) }
+        .lede h1 { margin-top: 12px; max-width: 30ch; font-size: clamp(26px, 2.5vw, 36px); line-height: 1.12; font-weight: 680; font-stretch: 112%; letter-spacing: -.02em; text-wrap: balance }
+        .lede p { margin-top: 12px; max-width: 70ch; font-size: 17px; color: var(--muted) }
+        .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow) }
+        .pipe { margin-top: 28px; padding: 20px 24px 18px; background-image: radial-gradient(circle at 1px 1px, #E7E3DA 1px, transparent 1.6px); background-size: 16px 16px }
+        .pipe svg { display: block; width: 100%; height: auto }
+        .p-name { font: 600 15px var(--sans); fill: var(--ink) }
+        .p-sub { font: 500 12px var(--mono); fill: var(--muted) }
+        .p-wire { fill: none; stroke: var(--line-2); stroke-width: 1.5 }
+        .p-wire.spoof { stroke: var(--accent); stroke-dasharray: 4 5; opacity: .7 }
+        .p-router { fill: var(--ink) }
+        .p-ring { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0 }
+        .pipe.busy .p-ring { animation: ring 1.4s ease-in-out infinite }
+        @keyframes ring { 50% { opacity: .9 } }
+        .p-k { font: 600 12px var(--mono); letter-spacing: .14em; fill: #B9B3A8 }
+        .p-flow { font: 500 13px var(--sans); fill: #E7E3DB }
+        .p-sched { font: 700 22px var(--sans); font-stretch: 110%; fill: #fff }
+        .p-sub2 { font: 500 12px var(--mono); fill: #B9B3A8 }
+        .p-link { stroke: #DDD8CE; stroke-width: 10; stroke-linecap: round }
+        .p-lab { font: 600 13px var(--mono); fill: var(--ink) }
+        .p-lab2 { font: 500 12px var(--mono); fill: var(--muted) }
+        .p-rx { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5 }
+        .p-tick { fill: none; stroke: var(--pass); stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round }
+        .pk.emergency { fill: var(--accent) } .pk.voice { fill: var(--ink-2) } .pk.video { fill: var(--muted) } .pk.best_effort { fill: var(--faint) }
+        .pk.spoof { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5 }
+        .runstrip { display: grid; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line-2) }
+        .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px }
+        .steps li { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font: 500 13px var(--mono); color: var(--muted) }
+        .steps li[data-state="now"] { border-color: var(--ink); color: var(--ink) }
+        .steps li[data-state="now"] .sw { animation: pulse 1.2s ease-in-out infinite }
+        .steps li[data-state="done"] { background: var(--sunk); color: var(--ink-2) }
+        .steps .i { width: 13px; height: 13px; color: var(--pass) }
+        .prog { height: 6px; border-radius: 999px; background: var(--sunk); overflow: hidden }
+        .prog i { display: block; height: 100%; background: var(--ink); transform-origin: left; transform: scaleX(0); transition: transform .3s linear }
+        .runmeta { font: 500 13px var(--mono); color: var(--muted) }
+
+        .results { display: grid; gap: 20px; margin-top: 28px; transition: opacity .25s }
+        .results.stale { opacity: .45; transition-delay: .15s }
+        .lastrun { font: 500 13px var(--mono); color: var(--muted) }
+        .insight { display: flex; gap: 14px; align-items: flex-start; padding: 18px 22px; border-radius: var(--r-lg); background: var(--ink); color: #E9E5DD; font-size: 17px; line-height: 1.5; animation: rise .5s var(--ease) both }
+        .insight b { color: #fff; font-weight: 650 }
+        .insight .i { width: 20px; height: 20px; margin-top: 3px; color: var(--accent-soft) }
+        .score { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px }
+        .tile { position: relative; overflow: hidden; padding: 16px 16px 14px; animation: rise .5s var(--ease) both; animation-delay: calc(var(--i) * 45ms + 60ms) }
+        .tile.eps { border-color: #E9B795 }
+        .tile.eps::before { content: ""; position: absolute; inset: 0 0 auto; height: 3px; background: var(--accent) }
+        .tile-head { display: flex; align-items: center; gap: 8px }
+        .tile-head h3 { font-size: 15px; font-weight: 650 }
+        .tag { margin-left: auto; padding: 3px 7px; border-radius: 6px; background: #FBEEE5; font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--accent-ink) }
+        .tag.base { background: var(--sunk); color: var(--muted) }
+        .tile-big { margin-top: 14px; font-weight: 700; font-size: 44px; line-height: 1; font-stretch: 118%; letter-spacing: -.03em; font-variant-numeric: tabular-nums }
+        .tile-big small { font-size: 20px; font-weight: 600; color: var(--faint); letter-spacing: 0 }
+        .tile-big.ok { color: var(--pass) } .tile-big.no { color: var(--fail) }
+        .tile-cap { margin-top: 4px; font-size: 13px; color: var(--muted) }
+        .pips { display: flex; gap: 4px; margin-top: 12px }
+        .pip { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px 3px 4px; border-radius: 6px; font: 600 11px var(--mono) }
+        .pip .i { width: 12px; height: 12px; stroke-width: 2.5 }
+        .pip.ok { background: var(--pass-wash); color: var(--pass) } .pip.no { background: var(--fail-wash); color: var(--fail) }
+        .tile-kv { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line) }
+        .tile-kv dt { font-size: 12px; color: var(--muted) }
+        .tile-kv dd { margin: 2px 0 0; font: 600 15px var(--mono) }
+        .tile-kv dd small { font-weight: 500; color: var(--muted) }
+        @keyframes rise { from { opacity: 0; transform: translateY(8px) } }
+
+        .card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 16px; padding: 18px 20px 12px }
+        .card-head h2, .chart h3 { font-size: 16px; font-weight: 650; font-stretch: 106% }
+        .card-head p, .chart figcaption p { font-size: 13px; color: var(--muted) }
+        .tablecard { overflow: hidden }
+        .tscroll { overflow-x: auto }
+        table { width: 100%; border-collapse: collapse; font-size: 14px }
+        th, td { padding: 12px 20px; border-top: 1px solid var(--line); text-align: left; vertical-align: top }
+        thead th { border-top: 0; background: #FAF9F6; font: 600 12px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted) }
+        .th-sub { display: block; margin-top: 3px; font-weight: 500; letter-spacing: 0; text-transform: none }
+        .th-sub span { white-space: nowrap }
+        tbody th { font-weight: 650; white-space: nowrap }
+        tbody th .sw { margin-right: 8px }
+        .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 6px; border-radius: 6px; font: 600 12px var(--mono); letter-spacing: .04em; text-transform: uppercase }
+        .badge .i { width: 13px; height: 13px; stroke-width: 2.5 }
+        .badge.ok { background: var(--pass-wash); color: var(--pass) } .badge.no { background: var(--fail-wash); color: var(--fail) }
+        .vals { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 7px; font: 500 13px var(--mono); color: var(--ink-2); white-space: nowrap }
+        .vals em { font-style: normal; color: var(--muted) }
+        .vals .bad, .bad { color: var(--fail); font-weight: 600 }
+        .vals .bad em { color: inherit }
+        .num { font-family: var(--mono); white-space: nowrap }
+        .mini th, .mini td { padding: 10px 14px }
+        .mini th:first-child, .mini td:first-child { padding-left: 0 }
+        .ctr { display: grid; gap: 4px; min-width: 80px; max-width: 180px }
+        .ctr b { font: 600 14px var(--mono) }
+        .ctr small { font: 500 12px var(--mono); color: var(--muted) }
+        .meter { height: 4px; border-radius: 2px; background: var(--fail-wash); overflow: hidden }
+        .meter i { display: block; height: 100%; background: var(--ink-2); transform-origin: left; transform: scaleX(var(--v)) }
+
+        .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
+        .legend-label { margin-right: 4px }
+        .lg { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 7px 13px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-weight: 600; font-size: 14px; transition: border-color .2s, background-color .2s, color .2s }
+        .lg:hover { border-color: var(--line-2) }
+        .lg[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: #fff }
+        .legend-hint { font-size: 13px; color: var(--muted) }
+        .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px }
+        .span2 { grid-column: 1 / -1 }
+        .chart { min-width: 0; padding: 18px 20px 14px }
+        .chart figcaption p { margin-top: 2px }
+        .plot { position: relative; margin-top: 12px }
+        .plot svg { display: block; width: 100%; height: auto; overflow: visible }
+        .plot text { font: 500 12px var(--mono); fill: var(--muted) }
+        .plot .cl { font: 600 13px var(--sans); fill: var(--ink-2) }
+        .grid { stroke: var(--line); stroke-width: 1 }
+        .sla-line { stroke: var(--ink); stroke-width: 1.25; stroke-dasharray: 4 4; opacity: .6 }
+        .plot .sla-t { font: 600 11px var(--mono); fill: var(--ink-2); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round }
+        .bar { transform-box: fill-box; transform-origin: 50% 100% }
+        .ln { fill: none; stroke-width: 1.75; stroke-linejoin: round; stroke-linecap: round }
+        .ln.eps { stroke-width: 3 }
+        .xh-line { stroke: var(--ink); stroke-width: 1; opacity: .35 }
+        .xh circle { stroke: var(--surface); stroke-width: 2 }
+        .hit { fill: transparent; cursor: crosshair }
+        .animate .bar { animation: grow .7s var(--ease) both; animation-delay: var(--d) }
+        .animate .ln { stroke-dasharray: 1 1; stroke-dashoffset: 1; animation: draw 1.1s var(--ease) forwards }
+        @keyframes grow { from { transform: scaleY(0) } }
+        @keyframes draw { to { stroke-dashoffset: 0 } }
+        .nodata { padding: 40px 0; color: var(--muted) }
+        .results[data-focus] [data-s] { opacity: .2; transition: opacity .2s }
+        .results[data-focus="fifo"] [data-s="fifo"], .results[data-focus="pq"] [data-s="pq"], .results[data-focus="wfq"] [data-s="wfq"],
+        .results[data-focus="drr"] [data-s="drr"], .results[data-focus="eps"] [data-s="eps"] { opacity: 1 }
+
+        .state-card { display: grid; gap: 12px; justify-items: start; padding: 44px 40px }
+        .state-card.empty { background: transparent; border: 1.5px dashed var(--line-2); box-shadow: none }
+        .state-card .i-lg { width: 28px; height: 28px; color: var(--muted) }
+        .state-card.error .i-lg { color: var(--fail) }
+        .state-card h2 { font-size: 22px; font-weight: 650; font-stretch: 108% }
+        .state-card p { max-width: 62ch; color: var(--muted) }
+        .btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 6px; padding: 10px 16px; border: 1px solid var(--line-2); border-radius: 11px; background: var(--surface); font-weight: 600; transition: border-color .2s, transform .15s var(--ease) }
+        .btn:hover { border-color: var(--ink) }
+        .btn:active { transform: translateY(1px) }
+        .skel { display: grid; gap: 20px }
+        .sk { position: relative; overflow: hidden; border-radius: var(--r-lg); background: var(--sunk) }
+        .sk::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .6), transparent); animation: shimmer 1.3s ease-in-out infinite }
+        @keyframes shimmer { to { transform: translateX(100%) } }
+        .sk-band { height: 62px } .sk-tile { height: 196px } .sk-table { height: 300px } .sk-chart { height: 320px }
+
+        .tip { position: fixed; z-index: 50; max-width: 280px; padding: 10px 12px; border-radius: 10px; background: var(--ink); color: #EDE9E1; font: 500 13px/1.5 var(--mono); box-shadow: 0 12px 30px -12px rgba(20, 16, 10, .55); pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .12s }
+        .tip.on { opacity: 1; transform: none }
+        .tip b { color: #fff }
+        .tip-h { margin-bottom: 4px; color: #B9B3A8 }
+        .tip .row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px }
+
+        @media (max-width: 1100px) { .layout { grid-template-columns: 264px minmax(0, 1fr); gap: 28px } }
+        @media (max-width: 900px) {
+            .top-in { grid-template-columns: 1fr auto; padding: 10px 16px }
+            .seg { grid-column: 1 / -1; order: 3 }
+            .layout { grid-template-columns: 1fr; padding: 20px 16px 64px }
+            .rail { position: static; max-height: none; overflow: visible; padding: 0 }
+            .cases { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)) }
+            .charts { grid-template-columns: 1fr }
+        }
+        @media (max-width: 600px) {
+            .pipe { display: none }
+            .brand-sub { display: none }
+            th, td { padding: 10px 14px }
+            .state-card { padding: 32px 22px }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important }
+        }
     </style>
 </head>
 
 <body>
-    <header><div><div class="eyebrow">Network resilience lab / QoS</div><h1>Emergency traffic prioritization</h1><p>Compare repeatable simulations with real UDP traffic through the software router.</p></div><div id="st"></div></header>
-    <nav class="tabs" aria-label="Dashboard view"><button class="tab active" id="simTab" onclick="showView('sim')">Simulation</button><button class="tab" id="liveTab" onclick="showView('live')">Live demo</button></nav>
-    <section id="simControls" class="controls"><label>Test case <select id="sc"></select></label><button class="primary" onclick="run()">Run simulation</button><span class="hint">Deterministic discrete-event model</span></section>
-    <section id="liveControls" class="controls" hidden><label>Traffic profile <select id="liveScenario"><option value="congestion">Congestion</option><option value="spoof">Spoofed emergency flood</option></select></label><label>Duration (s) <input id="liveDuration" type="number" value="6" min="1" max="30"></label><label>Schedulers <select id="liveSchedulers" multiple size="5" title="Hold Ctrl or Command to select multiple"><option value="fifo" selected>FIFO</option><option value="pq" selected>Strict PQ</option><option value="wfq" selected>WFQ</option><option value="drr" selected>DRR</option><option value="eps" selected>EPS</option></select></label><button class="primary live-primary" onclick="runLive()">Run live demo</button><span class="hint">Real loopback UDP / 1 Mbit/s software router</span></section>
-    <div id="resultTitle" class="eyebrow"></div><div id="desc"></div>
-    <div id="sla"></div>
-    <div class="charts"><canvas class="chart" id="c1" width="520" height="300"></canvas><canvas class="chart" id="c2" width="520" height="300"></canvas>
-    <canvas class="chart" id="c3" width="520" height="300"></canvas><canvas class="chart" id="c4" width="520" height="300"></canvas></div>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" /></symbol>
+        <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></symbol>
+        <symbol id="i-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></symbol>
+        <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></symbol>
+        <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></symbol>
+    </svg>
+    <a class="skip" href="#main">Skip to results</a>
+
+    <header class="top">
+        <div class="top-in">
+            <div class="brand">
+                <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#1E1D1B" /><rect x="8" y="9" width="16" height="3.2" rx="1.6" fill="#E58A55" /><rect x="8" y="14.4" width="11" height="3.2" rx="1.6" fill="#F3F1EC" opacity=".85" /><rect x="8" y="19.8" width="6.5" height="3.2" rx="1.6" fill="#F3F1EC" opacity=".5" /></svg>
+                <div><span class="brand-name">Emergency QoS Lab</span><span class="brand-sub">QEP protocol · 5 schedulers · live router</span></div>
+            </div>
+            <div class="seg" id="seg" role="group" aria-label="Dashboard mode" data-mode="sim">
+                <span class="seg-thumb" aria-hidden="true"></span>
+                <button type="button" data-mode="sim" aria-pressed="true"><svg class="i" aria-hidden="true"><use href="#i-layers" /></svg>Simulation</button>
+                <button type="button" data-mode="live" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-activity" /></svg>Live router</button>
+            </div>
+            <div class="status" id="status" data-state="idle" role="status" aria-live="polite"><span class="status-dot"></span><span id="statusText">Ready</span></div>
+        </div>
+    </header>
+
+    <div class="layout">
+        <aside class="rail">
+            <section id="panelSim" aria-labelledby="simHead">
+                <div class="rail-head"><h2 id="simHead">Test cases</h2><span id="caseCount"></span></div>
+                <p class="rail-note">Discrete-event model of a 10 Mbit/s bottleneck. Every case runs all five schedulers.</p>
+                <ol class="cases" id="cases"></ol>
+            </section>
+            <section id="panelLive" aria-labelledby="liveHead" hidden>
+                <div class="rail-head"><h2 id="liveHead">Live router</h2><span>loopback UDP</span></div>
+                <p class="rail-note">Real sockets: senders, then the software QoS router, then a receiver. Each scheduler runs on its own.</p>
+                <fieldset class="live-form" id="liveForm">
+                    <fieldset class="field">
+                        <legend>Traffic profile</legend>
+                        <label class="opt"><input type="radio" name="profile" value="congestion" checked><span><b>Congestion</b><small>Voice, video, emergency sensors and bulk compete for 1 Mbit/s.</small></span></label>
+                        <label class="opt"><input type="radio" name="profile" value="spoof"><span><b>Spoofed emergency flood</b><small>Adds a 900 kbit/s bulk flow falsely marked as emergency.</small></span></label>
+                    </fieldset>
+                    <div class="field">
+                        <div class="field-row"><label class="lbl" for="dur">Duration per scheduler</label><output id="durOut" for="dur">6 s</output></div>
+                        <input id="dur" type="range" min="2" max="30" step="1" value="6">
+                    </div>
+                    <fieldset class="field">
+                        <legend>Schedulers</legend>
+                        <div class="chips" id="chips"></div>
+                        <p class="helper" id="estimate"></p>
+                        <p class="field-error" id="schedErr" role="alert" hidden>Select at least one scheduler.</p>
+                    </fieldset>
+                </fieldset>
+                <button class="btn-primary" id="runLive" type="button"><svg class="i" aria-hidden="true"><use href="#i-play" /></svg><span>Run live traffic</span></button>
+                <p class="capture">Capture in Wireshark on loopback:<br><code>udp.port in {5004 5006 5911 5201}</code></p>
+            </section>
+        </aside>
+
+        <main id="main">
+            <section class="lede">
+                <div class="eyebrow" id="eyebrow">Simulation</div>
+                <h1 id="title">Emergency traffic prioritization</h1>
+                <p id="desc"></p>
+            </section>
+            <section class="card pipe" id="pipe" aria-label="Traffic path">
+                <div id="pipeSvg"></div>
+                <div class="runstrip" id="runstrip" hidden>
+                    <ol class="steps" id="steps"></ol>
+                    <div class="prog" role="progressbar" aria-label="Live run progress (estimated)" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="prog"><i id="progFill"></i></div>
+                    <p class="runmeta" id="runmeta"></p>
+                </div>
+            </section>
+            <div class="results" id="results"></div>
+        </main>
+    </div>
+    <div class="tip" id="tip" role="tooltip"></div>
+
     <script>
-        const COL = { fifo: '#9aa5b1', pq: '#e07a5f', wfq: '#3d85c6', drr: '#6aa84f', eps: '#8e44ad' };
+        const SCHED = ['fifo', 'pq', 'wfq', 'drr', 'eps'];
         const LAB = { fifo: 'FIFO', pq: 'Strict PQ', wfq: 'WFQ', drr: 'DRR', eps: 'EPS' };
-        const CL = ['emergency', 'voice', 'video', 'best_effort'];
-        fetch('/api/scenarios').then(r => r.json()).then(j => {
-            const s = document.getElementById('sc');
-            for (const k in j) { const o = document.createElement('option'); o.value = k; o.textContent = j[k].title; s.appendChild(o); } s.value = 'tc2';
-        });
-        function bars(id, title, get, log) {
-            const c = document.getElementById(id), g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
-            const runs = window.R.runs, sch = Object.keys(runs), W = c.width, H = c.height, ml = 48, mb = 48, mt = 28, pw = W - ml - 10, ph = H - mt - mb;
-            let vals = []; sch.forEach(s => CL.forEach(k => vals.push(get(runs[s].summary[k])))); let mx = Math.max(...vals, 1e-9);
-            const f = v => log ? Math.max(0, Math.log10(Math.max(v, .1)) + 1) / (Math.log10(Math.max(mx, 10)) + 1) : v / (mx * 1.1);
-            g.font = 'bold 13px sans-serif'; g.fillStyle = '#222'; g.fillText(title, ml, 16); g.font = '11px sans-serif';
-            for (let i = 0; i <= 4; i++) {
-                const y = mt + ph * (1 - i / 4); g.strokeStyle = '#eee'; g.beginPath(); g.moveTo(ml, y); g.lineTo(W - 10, y); g.stroke();
-                const v = log ? Math.pow(10, (i / 4) * (Math.log10(Math.max(mx, 10)) + 1) - 1) : mx * 1.1 * i / 4; g.fillStyle = '#555'; g.fillText(v.toPrecision(3), 2, y + 4);
-            }
-            const gw = pw / CL.length, bw = gw * .8 / sch.length;
-            CL.forEach((k, ci) => {
-                g.fillStyle = '#333'; g.fillText(k, ml + ci * gw + gw / 2 - 20, H - mb + 14);
-                sch.forEach((s, si) => { const v = get(runs[s].summary[k]), h = ph * f(v); g.fillStyle = COL[s]; g.fillRect(ml + ci * gw + gw * .1 + si * bw, mt + ph - h, bw, h); });
-            });
-            sch.forEach((s, i) => { g.fillStyle = COL[s]; g.fillRect(ml + i * 90, H - 18, 10, 10); g.fillStyle = '#333'; g.fillText(LAB[s], ml + i * 90 + 13, H - 9); });
-        }
-        function line(id) {
-            const c = document.getElementById(id), g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
-            const runs = window.R.runs, sch = Object.keys(runs), W = c.width, H = c.height, ml = 48, mb = 48, mt = 28, pw = W - ml - 10, ph = H - mt - mb;
-            let pts = []; sch.forEach(s => runs[s].timeline.emergency.forEach(p => pts.push(p))); if (!pts.length) return;
-            const xmax = Math.max(...pts.map(p => p[0]), .001), ymax = Math.max(...pts.map(p => p[1]), 10), L = v => Math.log10(Math.max(v, 1)) / Math.log10(Math.max(ymax, 10));
-            g.font = 'bold 13px sans-serif'; g.fillStyle = '#222'; g.fillText('Emergency delay over time (ms, log)', ml, 16); g.font = '11px sans-serif';
-            for (let i = 0; i <= 3; i++) {
-                const y = mt + ph * (1 - i / 3); g.strokeStyle = '#eee'; g.beginPath(); g.moveTo(ml, y); g.lineTo(W - 10, y); g.stroke();
-                g.fillStyle = '#555'; g.fillText(Math.pow(10, i / 3 * Math.log10(Math.max(ymax, 10))).toFixed(0), 8, y + 4);
-            }
-            sch.forEach((s, i) => {
-                g.strokeStyle = COL[s]; g.lineWidth = 2; g.beginPath(); runs[s].timeline.emergency.forEach((p, j) => {
-                    const x = ml + pw * p[0] / xmax, y = mt + ph * (1 - L(p[1])); j ? g.lineTo(x, y) : g.moveTo(x, y);
-                }); g.stroke();
-                g.fillStyle = COL[s]; g.fillRect(ml + i * 90, H - 18, 10, 10); g.fillStyle = '#333'; g.fillText(LAB[s], ml + i * 90 + 13, H - 9);
-            }); g.lineWidth = 1;
-            g.fillStyle = '#555'; g.fillText('time (s)', W / 2 - 15, H - 30);
-        }
-        function showView(view) {
-            const live = view === 'live';
-            document.getElementById('simControls').hidden = live;
-            document.getElementById('liveControls').hidden = !live;
-            document.getElementById('simTab').classList.toggle('active', !live);
-            document.getElementById('liveTab').classList.toggle('active', live);
-        }
-        function status(message, state) {
-            const el = document.getElementById('st'); el.textContent = message;
-            el.className = state || '';
-        }
+        const CLASSES = ['emergency', 'voice', 'video', 'best_effort'];
+        const CLAB = { emergency: 'Emergency', voice: 'Voice', video: 'Video', best_effort: 'Bulk' };
+        const SLA_CLASSES = ['emergency', 'voice', 'video'];
+        // mirrors SLA in qos/metrics.py (the server's pass/fail verdicts stay authoritative)
+        const SLA = { emergency: { delay_p99_ms: 50, loss_pct: 0.1 }, voice: { delay_p99_ms: 150, jitter_ms: 30, loss_pct: 1 }, video: { delay_p99_ms: 300, loss_pct: 2 } };
+        // per-scheduler overhead in live/run_live_demo.py: router warm-up 0.3 s + start offset 0.5 s + drain 2.5 s
+        const LIVE_OVERHEAD_S = 3.6;
+        const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+        const $ = (s, r = document) => r.querySelector(s);
+        const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const sw = s => `<i class="sw" style="background:var(--s-${s})"></i>`;
+        const icon = (id, cls = '') => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
+        const fmtNum = v => String(+v.toPrecision(3));
+        const fmtMs = v => v === 0 ? '0' : v < 10 ? v.toFixed(1) : Math.round(v).toLocaleString('en-US');
+        const fmtPct = v => (v === 0 ? 0 : v < 1 ? +v.toFixed(2) : v < 10 ? +v.toFixed(1) : Math.round(v)) + '%';
+        const fmtRate = k => k >= 1000 ? (k / 1000).toFixed(k >= 10000 ? 0 : 1) + ' Mbit/s' : Math.round(k) + ' kbit/s';
+        const tickMs = v => v >= 1000 ? fmtNum(v / 1000) + ' s' : fmtNum(v);
+        const MET = { delay_p99_ms: ['p99', v => fmtMs(v) + ' ms'], jitter_ms: ['jitter', v => fmtMs(v) + ' ms'], loss_pct: ['loss', fmtPct] };
+        const misses = (c, sum) => Object.entries(SLA[c]).filter(([k, lim]) => sum[k] > lim).map(([k, lim]) => `${MET[k][0]} ${MET[k][1](sum[k])} > ${MET[k][1](lim)}`);
+        const listNames = a => a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+
+        const state = { mode: 'sim', cases: {}, caseId: 'tc2', sim: null, live: null, err: { sim: null, live: null }, busy: { sim: false, live: false }, simSeq: 0, liveRun: null, liveMeta: null, focus: null, msg: { kind: 'idle', text: 'Ready' } };
+
+        /* ---------- helpers ---------- */
         async function request(url) {
-            const response = await fetch(url), data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Request failed');
+            let res;
+            try { res = await fetch(url); } catch { throw new Error('Could not reach the dashboard server. Check that dashboard/server.py is still running.'); }
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
             return data;
         }
-        function render(data) {
-            window.R = data;
-            document.getElementById('resultTitle').textContent = data.source === 'live' ? data.title : 'Simulation · ' + data.title;
-            document.getElementById('desc').textContent = data.desc;
-            let h = '<table><tr><th>Scheduler</th><th>Emergency</th><th>Voice</th><th>Video</th><th>Recovery</th></tr>';
-            for (const s in data.runs) {
-                const x = data.runs[s]; h += '<tr><td>' + LAB[s] + '</td>';
-                ['emergency', 'voice', 'video'].forEach(k => { const v = x.sla[k]; h += '<td class="' + (v.pass ? 'ok' : 'bad') + '" title="' + v.violations.join('; ') + '">' + (v.pass ? 'PASS' : 'FAIL') + '</td>'; });
-                h += '<td>' + (x.recovery_ms !== undefined ? x.recovery_ms.toFixed(0) + ' ms' : '-') + '</td></tr>';
-            }
-            h += '</table>';
-            if (data.source === 'live') {
-                h += '<div class="eyebrow">Software router packet counters</div><table><tr><th>Scheduler</th><th>Class</th><th>Ingress packets</th><th>Egress packets</th><th>Dropped</th></tr>';
-                for (const s in data.runs) for (const c in data.runs[s].router) {
-                    const m = data.runs[s].router[c];
-                    h += '<tr><td>' + LAB[s] + '</td><td>' + c + '</td><td>' + m.in + '</td><td>' + m.out + '</td><td>' + m.dropped + '</td></tr>';
-                }
-                h += '</table>';
-            }
-            document.getElementById('sla').innerHTML = h;
-            bars('c1', 'p99 delay (ms, log)', m => m.delay_p99_ms, true); bars('c2', 'Loss (%)', m => m.loss_pct, false);
-            bars('c3', 'Throughput (kbit/s)', m => m.throughput_kbps, false); line('c4');
+        function parseTitle(t) {
+            const [code, ...rest] = t.split(' - '), full = rest.join(' - ') || t, m = full.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+            return { code, full, name: m ? m[1] : full, detail: m ? m[2] : '' };
         }
-        async function run() {
-            status('Running simulation…', 'busy');
-            try { render(await request('/api/run?scenario=' + encodeURIComponent(document.getElementById('sc').value))); status('Simulation complete'); }
-            catch (error) { status(error.message, 'error'); }
+        const profile = () => $('input[name="profile"]:checked').value;
+        const selected = () => SCHED.filter(s => $(`#chips input[value="${s}"]`).checked);
+        function refreshStatus() {
+            const el = $('#status');
+            let kind = state.msg.kind, text = state.msg.text;
+            if (state.busy.live && state.liveRun) { kind = 'busy'; text = `Live · ${LAB[liveStep().cur]} · ${Math.round(liveStep().elapsed)} s`; }
+            else if (state.busy.sim) { kind = 'busy'; text = 'Simulating…'; }
+            el.dataset.state = kind; $('#statusText').textContent = text;
+        }
+
+        /* ---------- tooltip ---------- */
+        const tip = $('#tip');
+        function showTip(html, x, y) { tip.innerHTML = html; tip.classList.add('on'); moveTip(x, y); }
+        function moveTip(x, y) {
+            const w = tip.offsetWidth, h = tip.offsetHeight;
+            tip.style.left = (x + 16 + w > innerWidth - 8 ? x - w - 16 : x + 16) + 'px';
+            tip.style.top = (y + 16 + h > innerHeight - 8 ? y - h - 16 : y + 16) + 'px';
+        }
+        const hideTip = () => tip.classList.remove('on');
+        document.addEventListener('pointerover', e => { const t = e.target.closest && e.target.closest('[data-tip]'); if (t) showTip(t.dataset.tip, e.clientX, e.clientY); });
+        document.addEventListener('pointermove', e => { if (e.target.closest && e.target.closest('[data-tip]')) moveTip(e.clientX, e.clientY); });
+        document.addEventListener('pointerout', e => { if (e.target.closest && e.target.closest('[data-tip]')) hideTip(); });
+
+        /* ---------- header + pipeline ---------- */
+        function renderLede() {
+            let eyebrow, title, desc;
+            if (state.mode === 'sim') {
+                const c = state.cases[state.caseId], t = c ? parseTitle(c.title) : { code: state.caseId.toUpperCase(), full: 'Emergency traffic prioritization' };
+                eyebrow = 'Simulation · ' + t.code; title = t.full; desc = c ? c.desc : '';
+            } else {
+                const spoof = profile() === 'spoof';
+                eyebrow = 'Live router · ' + (spoof ? 'Spoofed flood' : 'Congestion');
+                title = spoof ? 'Real UDP traffic under a spoofed emergency flood' : 'Real UDP traffic through a congested router';
+                desc = 'About 190% offered load on a 1 Mbit/s egress: 2 voice calls, 150 kbit/s video, 5 emergency sensors with an event burst and 1.5 Mbit/s of bulk'
+                    + (spoof ? ', plus a 900 kbit/s bulk flow marked as emergency to game the router.' : '.');
+            }
+            $('#eyebrow').textContent = eyebrow; $('#title').textContent = title; $('#desc').textContent = desc;
+        }
+        const SRC = { emergency: ['Emergency', 'CS6 · sensors'], voice: ['Voice', 'EF · calls'], video: ['Video', 'AF41 · streams'], best_effort: ['Bulk', 'BE · transfers'], spoof: ['Spoofer', 'fake CS6 flood'] };
+        const packet = (d, cls, dur, begin) => `<circle r="4" class="pk ${cls}"><animateMotion dur="${dur}s" begin="${begin.toFixed(2)}s" repeatCount="indefinite" path="${d}"/></circle>`;
+        function pipelineSvg(live, spoof) {
+            const ids = CLASSES.concat(spoof ? ['spoof'] : []), n = ids.length;
+            const RX = 430, RY = 38, RW = 210, RH = 108, CY = RY + RH / 2, L0 = RX + RW + 10, L1 = 870;
+            let s = `<svg viewBox="0 0 1000 184" role="img" aria-label="Emergency, voice, video and bulk senders${spoof ? ' plus a spoofing flow' : ''} feed the QoS router, which forwards over a ${live ? '1' : '10'} Mbit/s bottleneck to the receiver.">`;
+            ids.forEach((id, i) => {
+                const y = 22 + i * 140 / (n - 1), ey = RY + 22 + i * (RH - 44) / (n - 1), d = `M156 ${y} C 300 ${y} 300 ${ey} ${RX} ${ey}`;
+                s += `<text class="p-name" x="0" y="${y - 1}">${SRC[id][0]}</text><text class="p-sub" x="0" y="${y + 15}">${SRC[id][1]}</text>`;
+                s += `<path class="p-wire${id === 'spoof' ? ' spoof' : ''}" d="${d}"/><circle class="pk ${id}" cx="150" cy="${y}" r="5"/>`;
+                const k = id === 'spoof' ? 3 : 2;
+                for (let j = 0; j < k; j++) s += packet(d, id, 2.6, -(j * 2.6 / k + i * 0.41));
+            });
+            s += `<rect class="p-ring" x="${RX - 5}" y="${RY - 5}" width="${RW + 10}" height="${RH + 10}" rx="20"/><rect class="p-router" x="${RX}" y="${RY}" width="${RW}" height="${RH}" rx="16"/>`
+                + `<text class="p-k" x="${RX + 20}" y="${RY + 26}">QOS ROUTER</text><text class="p-flow" x="${RX + 20}" y="${RY + 46}">classify · queue · schedule</text>`
+                + `<text class="p-sched" id="pSched" x="${RX + 20}" y="${RY + 80}"></text><text class="p-sub2" id="pSchedSub" x="${RX + 20}" y="${RY + 97}"></text>`;
+            const ld = `M${L0} ${CY} L${L1 - 32} ${CY}`;
+            s += `<line class="p-link" x1="${L0}" y1="${CY}" x2="${L1 - 32}" y2="${CY}"/>`;
+            ['emergency', 'voice', 'emergency', 'video', 'best_effort'].forEach((c, j) => s += packet(ld, c, 1.8, -j * 0.36));
+            s += `<text class="p-lab" x="${(L0 + L1 - 32) / 2}" y="${CY - 18}" text-anchor="middle">${live ? '1' : '10'} Mbit/s bottleneck</text>`
+                + `<text class="p-lab2" x="${(L0 + L1 - 32) / 2}" y="${CY + 30}" text-anchor="middle">${live ? 'rate-limited egress' : '5 ms propagation'}</text>`
+                + `<circle class="p-rx" cx="${L1 + 8}" cy="${CY}" r="22"/><path class="p-tick" d="M${L1 - 1} ${CY} l6 6 l11 -12"/>`
+                + `<text class="p-name" x="${L1 + 8}" y="${CY + 46}" text-anchor="middle">Receiver</text><text class="p-sub" x="${L1 + 8}" y="${CY + 62}" text-anchor="middle">h_srv</text></svg>`;
+            return s;
+        }
+        function drawPipeline() {
+            const live = state.mode === 'live', spoof = live ? profile() === 'spoof' : state.caseId === 'tc6', host = $('#pipeSvg'), key = state.mode + spoof;
+            if (host.dataset.key !== key) {
+                host.dataset.key = key; host.innerHTML = pipelineSvg(live, spoof);
+                if (reduceMotion.matches) host.querySelector('svg').pauseAnimations();
+            }
+            updateReadout();
+        }
+        function updateReadout() {
+            let big, small;
+            if (state.mode === 'sim') { big = '5 schedulers'; small = 'compared side by side'; }
+            else if (state.busy.live && state.liveRun) { const st = liveStep(); big = LAB[st.cur]; small = `scheduler ${st.idx + 1} of ${st.n}`; }
+            else { const n = selected().length; big = n + (n === 1 ? ' scheduler' : ' schedulers'); small = 'run one after another'; }
+            $('#pSched').textContent = big; $('#pSchedSub').textContent = small;
+            $('#pipe').classList.toggle('busy', state.busy[state.mode]);
+        }
+
+        /* ---------- live progress (estimated: the server answers once at the end) ---------- */
+        function liveStep() {
+            const r = state.liveRun, elapsed = (performance.now() - r.t0) / 1000, n = r.schedulers.length;
+            const idx = Math.min(n - 1, Math.floor(elapsed / r.per));
+            return { elapsed, n, idx, cur: r.schedulers[idx], pct: Math.min(0.97, elapsed / (r.per * n)), left: Math.max(0, r.per * n - elapsed) };
+        }
+        function renderRunStrip() {
+            const show = state.mode === 'live' && state.busy.live && state.liveRun;
+            $('#runstrip').hidden = !show;
+            if (!show) return;
+            const st = liveStep();
+            $('#steps').innerHTML = state.liveRun.schedulers.map((s, i) => {
+                const k = i < st.idx ? 'done' : i === st.idx ? 'now' : 'todo';
+                return `<li data-state="${k}">${k === 'done' ? icon('check') : sw(s)}${LAB[s]}</li>`;
+            }).join('');
+            $('#progFill').style.transform = `scaleX(${st.pct})`;
+            $('#prog').setAttribute('aria-valuenow', Math.round(st.pct * 100));
+            $('#runmeta').textContent = st.left > 1 ? `${Math.round(st.elapsed)} s elapsed · about ${Math.round(st.left)} s left (estimate)` : `${Math.round(st.elapsed)} s elapsed · collecting results`;
+        }
+        function updateEstimate() {
+            const n = selected().length, d = +$('#dur').value;
+            $('#durOut').textContent = d + ' s';
+            $('#estimate').textContent = n ? `About ${Math.round(n * (d + LIVE_OVERHEAD_S))} s for ${n} scheduler${n === 1 ? '' : 's'}.` : '';
+            $('#schedErr').hidden = n > 0 || $('#schedErr').hidden;
+            $('#runLive').disabled = state.busy.live || !n;
+            if (state.mode === 'live') updateReadout();
+        }
+
+        /* ---------- results ---------- */
+        function insightText(runs) {
+            const sch = Object.keys(runs), passes = s => SLA_CLASSES.filter(c => runs[s].sla[c].pass).length, out = [];
+            if (runs.fifo && runs.eps) {
+                const a = runs.fifo.summary.emergency, b = runs.eps.summary.emergency, ratio = a.delay_p99_ms / Math.max(b.delay_p99_ms, 0.001);
+                if (ratio >= 1.5) out.push(`EPS cuts emergency p99 delay from <b>${fmtMs(a.delay_p99_ms)} ms</b> under FIFO to <b>${fmtMs(b.delay_p99_ms)} ms</b>, ${ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)}× lower.`);
+                if (a.loss_pct > 0 && b.loss_pct <= a.loss_pct / 2) out.push(out.length ? `Emergency loss drops from <b>${fmtPct(a.loss_pct)}</b> to <b>${fmtPct(b.loss_pct)}</b>.` : `EPS cuts emergency loss from <b>${fmtPct(a.loss_pct)}</b> under FIFO to <b>${fmtPct(b.loss_pct)}</b>.`);
+            }
+            const best = sch.filter(s => passes(s) === 3).map(s => LAB[s]);
+            if (!best.length) out.push('No scheduler meets every SLA in this case.');
+            else if (best.length === sch.length) out.push(sch.length === 1 ? `${best[0]} meets all three SLAs.` : 'Every scheduler meets all three SLAs.');
+            else out.push(`${listNames(best)} ${best.length === 1 ? 'is the only one to meet' : 'meet'} all three SLAs.`);
+            return out.join(' ');
+        }
+        function scoreHtml(runs) {
+            return '<section class="score" aria-label="Scheduler scoreboard">' + Object.keys(runs).map((s, i) => {
+                const r = runs[s], e = r.summary.emergency, n = SLA_CLASSES.filter(c => r.sla[c].pass).length;
+                const pips = SLA_CLASSES.map(c => {
+                    const ok = r.sla[c].pass, why = ok ? 'SLA met' : misses(c, r.summary[c]).join(', ') || 'SLA missed';
+                    return `<span class="pip ${ok ? 'ok' : 'no'}" role="img" aria-label="${CLAB[c]} SLA ${ok ? 'met' : 'missed'}" data-tip="${esc(`<b>${CLAB[c]}</b><br>${why}`)}">${icon(ok ? 'check' : 'x')}${CLAB[c].slice(0, 2).toUpperCase()}</span>`;
+                }).join('');
+                const tag = s === 'eps' ? '<span class="tag">Proposed</span>' : s === 'fifo' ? '<span class="tag base">Baseline</span>' : '';
+                return `<article class="card tile ${s}" data-s="${s}" style="--i:${i}">
+                    <header class="tile-head">${sw(s)}<h3>${LAB[s]}</h3>${tag}</header>
+                    <p class="tile-big ${n === 3 ? 'ok' : n === 0 ? 'no' : ''}">${n}<small>/3</small></p>
+                    <p class="tile-cap">SLAs met</p>
+                    <div class="pips">${pips}</div>
+                    <dl class="tile-kv"><div><dt>Emerg. p99</dt><dd>${fmtMs(e.delay_p99_ms)}<small> ms</small></dd></div><div><dt>Emerg. loss</dt><dd>${fmtPct(e.loss_pct)}</dd></div></dl>
+                </article>`;
+            }).join('') + '</section>';
+        }
+        function slaHtml(runs) {
+            const sch = Object.keys(runs), rec = sch.some(s => runs[s].recovery_ms !== undefined);
+            const head = SLA_CLASSES.map(c => `<th scope="col">${CLAB[c]}<span class="th-sub">${Object.entries(SLA[c]).map(([k, l]) => `<span>${MET[k][0]} ≤ ${MET[k][1](l)}</span>`).join(' · ')}</span></th>`).join('')
+                + (rec ? '<th scope="col">Recovery<span class="th-sub">after the fault clears</span></th>' : '');
+            const rows = sch.map(s => {
+                const r = runs[s];
+                const cells = SLA_CLASSES.map(c => {
+                    const v = r.sla[c];
+                    if (v['n/a']) return '<td><span class="vals"><em>no traffic</em></span></td>';
+                    const vals = Object.keys(SLA[c]).map(k => `<span class="${r.summary[c][k] > SLA[c][k] ? 'bad' : ''}"><em>${MET[k][0]}</em> ${MET[k][1](r.summary[c][k])}</span>`).join('');
+                    return `<td><span class="badge ${v.pass ? 'ok' : 'no'}">${icon(v.pass ? 'check' : 'x')}${v.pass ? 'Pass' : 'Fail'}</span><span class="vals">${vals}</span></td>`;
+                }).join('');
+                return `<tr data-s="${s}"><th scope="row">${sw(s)}${LAB[s]}</th>${cells}${rec ? `<td class="num">${r.recovery_ms !== undefined ? fmtMs(r.recovery_ms) + ' ms' : '–'}</td>` : ''}</tr>`;
+            }).join('');
+            return `<section class="card tablecard"><div class="card-head"><h2>SLA verdicts</h2><p>Values in red break the target for that class.</p></div>
+                <div class="tscroll"><table><thead><tr><th scope="col">Scheduler</th>${head}</tr></thead><tbody>${rows}</tbody></table></div></section>`;
+        }
+        function detailHtml(data) {
+            const sch = Object.keys(data.runs);
+            if (data.source === 'live') {
+                const rows = sch.map(s => `<tr data-s="${s}"><th scope="row">${sw(s)}${LAB[s]}</th>` + CLASSES.map(c => {
+                    const k = (data.runs[s].router || {})[c] || { in: 0, out: 0, dropped: 0 }, pct = k.in ? k.dropped / k.in * 100 : 0;
+                    return `<td><div class="ctr"><b class="${k.dropped ? 'bad' : ''}">${fmtPct(pct)}</b><span class="meter"><i style="--v:${k.in ? k.out / k.in : 0}"></i></span><small>${k.out}/${k.in}</small></div></td>`;
+                }).join('') + '</tr>').join('');
+                return `<section class="card tablecard"><div class="card-head"><h2>Router packet counters</h2><p>Share dropped at the software router. Bar and count show packets forwarded out of packets received.</p></div>
+                    <div class="tscroll"><table><thead><tr><th scope="col">Scheduler</th>${CLASSES.map(c => `<th scope="col">${CLAB[c]}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></section>`;
+            }
+            const rows = sch.map(s => { const r = data.runs[s]; return `<tr data-s="${s}"><th scope="row">${sw(s)}${LAB[s]}</th><td class="num">${fmtNum(r.classification_accuracy_pct)}%</td><td class="num">${r.demotions.toLocaleString('en-US')}</td><td class="num">${fmtNum(r.cache_hit_ratio_pct)}%</td></tr>`; }).join('');
+            return `<figure class="card chart"><figcaption><h3>Classifier and policing</h3><p>Demoted packets were out of profile and re-marked to bulk by EPS policing.</p></figcaption>
+                <div class="tscroll plot"><table class="mini"><thead><tr><th scope="col">Scheduler</th><th scope="col">Accuracy</th><th scope="col">Demoted</th><th scope="col">Flow-cache hits</th></tr></thead><tbody>${rows}</tbody></table></div></figure>`;
+        }
+        function renderResults(animate) {
+            const el = $('#results'), m = state.mode, data = state[m], err = state.err[m];
+            el.setAttribute('aria-busy', state.busy[m]);
+            if (err) {
+                el.innerHTML = `<section class="card state-card error" role="alert">${icon('alert', 'i-lg')}<h2>${m === 'live' ? 'Live run failed' : 'Simulation failed'}</h2><p>${esc(err)}</p><button class="btn" type="button" data-retry>${icon('retry')}Try again</button></section>`;
+                return;
+            }
+            if (!data) {
+                el.innerHTML = state.busy[m]
+                    ? `<div class="skel" aria-hidden="true"><div class="sk sk-band"></div><div class="score">${'<div class="sk sk-tile"></div>'.repeat(5)}</div><div class="sk sk-table"></div></div>`
+                    : m === 'live'
+                        ? `<section class="state-card empty">${icon('activity', 'i-lg')}<h2>No live run yet</h2><p>Pick a traffic profile and the schedulers to compare, then press <b>Run live traffic</b>. Real UDP packets go through the software router one scheduler at a time, so the run takes a little while.</p></section>`
+                        : `<section class="state-card empty">${icon('layers', 'i-lg')}<h2>Pick a test case</h2><p>Choose a scenario on the left to run the simulator across all five schedulers.</p></section>`;
+                return;
+            }
+            const runs = data.runs, sch = Object.keys(runs), live = data.source === 'live';
+            if (state.focus && !runs[state.focus]) state.focus = null;
+            const meta = m === 'live' && state.liveMeta ? `<p class="lastrun">Last run: ${state.liveMeta.scenario === 'spoof' ? 'spoofed flood' : 'congestion'} · ${state.liveMeta.duration} s per scheduler · ${state.liveMeta.schedulers.map(s => LAB[s]).join(', ')}</p>` : '';
+            el.innerHTML = meta
+                + `<section class="insight">${icon('zap')}<p>${insightText(runs)}</p></section>`
+                + scoreHtml(runs) + slaHtml(runs) + (live ? detailHtml(data) : '')
+                + `<div class="legend" role="group" aria-label="Highlight one scheduler across the results"><span class="legend-label">Highlight</span>${sch.map(s => `<button type="button" class="lg" data-l="${s}" aria-pressed="false">${sw(s)}${LAB[s]}</button>`).join('')}<span class="legend-hint">Hover or click to isolate a scheduler.</span></div>`
+                + `<div class="charts" id="charts">
+                    <figure class="card chart span2"><figcaption><h3>Emergency delay over time</h3><p>Mean one-way delay per 250 ms window, log scale. The dashed line is the 50 ms SLA.</p></figcaption><div class="plot" id="pTimeline"></div></figure>
+                    <figure class="card chart"><figcaption><h3>p99 delay by class</h3><p>Milliseconds, log scale. Dashed lines mark each class SLA.</p></figcaption><div class="plot" id="pP99"></div></figure>
+                    <figure class="card chart"><figcaption><h3>Packet loss by class</h3><p>Share of sent packets that never arrived.</p></figcaption><div class="plot" id="pLoss"></div></figure>
+                    <figure class="card chart${live ? ' span2' : ''}"><figcaption><h3>Throughput by class</h3><p>Delivered rate in Mbit/s.</p></figcaption><div class="plot" id="pThr"></div></figure>
+                    ${live ? '' : detailHtml(data)}
+                </div>`;
+            applyFocus(state.focus);
+            drawCharts(animate);
+        }
+        function applyFocus(f) {
+            const el = $('#results');
+            if (f) el.dataset.focus = f; else delete el.dataset.focus;
+            el.querySelectorAll('.lg').forEach(b => b.setAttribute('aria-pressed', b.dataset.l === state.focus));
+        }
+        function syncBusy() {
+            const m = state.mode;
+            $('#results').classList.toggle('stale', state.busy[m] && !!state[m] && !state.err[m]);
+            $('#results').setAttribute('aria-busy', state.busy[m]);
+            updateReadout(); renderRunStrip(); refreshStatus();
+        }
+
+        /* ---------- charts (SVG, sized to their container) ---------- */
+        function niceStep(x) { const p = 10 ** Math.floor(Math.log10(x)), n = x / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; }
+        function linScale(vals) {
+            const mx = Math.max(0, ...vals), step = niceStep((mx || 1) / 4), hi = Math.max(step, Math.ceil(mx / step - 1e-9) * step), ticks = [];
+            for (let t = 0; t <= hi + step / 2; t += step) ticks.push(+t.toPrecision(6));
+            return { f: v => v / hi, ticks };
+        }
+        function logScale(vals, minHi) {
+            const pos = vals.filter(v => v > 0);
+            const e0 = Math.floor(Math.log10(Math.max(0.1, Math.min(...pos, minHi)))), e1 = Math.max(e0 + 1, Math.ceil(Math.log10(Math.max(...pos, minHi)))), ticks = [];
+            for (let e = e0; e <= e1; e++) { ticks.push(10 ** e); if (e1 - e0 <= 2 && e < e1) ticks.push(2 * 10 ** e, 5 * 10 ** e); }
+            return { f: v => (Math.log10(Math.max(v, 10 ** e0)) - e0) / (e1 - e0), ticks: ticks.sort((a, b) => a - b) };
+        }
+        function barChart(el, runs, o) {
+            const sch = Object.keys(runs), n = sch.length, W = Math.max(300, el.clientWidth), H = 270, m = { t: 16, r: 8, b: 34, l: 46 };
+            const pw = W - m.l - m.r, ph = H - m.t - m.b, base = m.t + ph;
+            const sc = o.log ? logScale(sch.flatMap(s => CLASSES.map(c => runs[s].summary[c][o.key])), 1000) : linScale(sch.flatMap(s => CLASSES.map(c => runs[s].summary[c][o.key])));
+            const y = v => m.t + ph * (1 - sc.f(v)), gw = pw / CLASSES.length, inner = gw * 0.74, bw = inner / n;
+            let g = sc.ticks.map(t => `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}"/><text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${o.tick(t)}</text>`).join('');
+            CLASSES.forEach((c, ci) => {
+                const gx = m.l + ci * gw + (gw - inner) / 2;
+                sch.forEach((s, si) => {
+                    const v = runs[s].summary[c][o.key], top = Math.min(y(v), base - 1.5);
+                    g += `<rect class="bar" data-s="${s}" x="${gx + si * bw + 1}" y="${top}" width="${Math.max(1, bw - 2)}" height="${base - top}" rx="2" style="fill:var(--s-${s});--d:${(ci * n + si) * 14}ms" data-tip="${esc(`<b>${LAB[s]}</b> · ${CLAB[c]}<br>${o.label} ${o.fmt(v)}`)}"/>`;
+                });
+                const lim = o.sla && SLA[c] && SLA[c][o.key];
+                if (lim) g += `<line class="sla-line" x1="${gx - 4}" x2="${gx + inner + 4}" y1="${y(lim)}" y2="${y(lim)}"/><text class="sla-t" x="${gx + inner + 4}" y="${y(lim) - 5}" text-anchor="end">${o.fmt(lim)}</text>`;
+                g += `<text class="cl" x="${m.l + ci * gw + gw / 2}" y="${H - 10}" text-anchor="middle">${CLAB[c]}</text>`;
+            });
+            el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label)} by traffic class for each scheduler">${g}</svg>`;
+        }
+        function lineChart(el, runs) {
+            const series = Object.keys(runs).map(s => ({ s, pts: (runs[s].timeline || {}).emergency || [] })).filter(d => d.pts.length).sort((a, b) => (a.s === 'eps') - (b.s === 'eps'));
+            if (!series.length) { el.innerHTML = '<p class="nodata">No emergency packets were delivered in this run.</p>'; return; }
+            const W = Math.max(300, el.clientWidth), H = 290, m = { t: 16, r: 16, b: 40, l: 46 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+            const xmax = Math.max(0.25, ...series.flatMap(d => d.pts.map(p => p[0]))), sc = logScale(series.flatMap(d => d.pts.map(p => p[1])), 100);
+            const x = t => m.l + pw * t / xmax, y = v => m.t + ph * (1 - sc.f(v)), xs = niceStep(xmax / Math.max(3, Math.floor(pw / 90)));
+            let g = sc.ticks.map(t => `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}"/><text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${tickMs(t)}</text>`).join('');
+            for (let t = 0; t <= xmax + 1e-9; t += xs) g += `<text x="${x(t)}" y="${H - 18}" text-anchor="middle">${fmtNum(t)}</text>`;
+            g += `<text x="${W - m.r}" y="${H - 2}" text-anchor="end">time (s)</text>`;
+            g += `<line class="sla-line" x1="${m.l}" x2="${W - m.r}" y1="${y(50)}" y2="${y(50)}"/><text class="sla-t" x="${W - m.r}" y="${y(50) - 6}" text-anchor="end">SLA 50 ms</text>`;
+            g += series.map(d => `<path class="ln ${d.s}" data-s="${d.s}" pathLength="1" style="stroke:var(--s-${d.s})" d="${d.pts.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join('')}"/>`).join('');
+            g += `<g class="xh" opacity="0"><line class="xh-line" y1="${m.t}" y2="${m.t + ph}"/>${series.map(d => `<circle data-s="${d.s}" r="4.5" style="fill:var(--s-${d.s})"/>`).join('')}</g>`;
+            g += `<rect class="hit" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}"/>`;
+            el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Emergency delay over time for each scheduler">${g}</svg>`;
+            const svg = el.firstElementChild, xh = svg.querySelector('.xh'), dots = xh.querySelectorAll('circle');
+            const nearest = (pts, t) => pts.reduce((b, p) => Math.abs(p[0] - t) < Math.abs(b[0] - t) ? p : b, pts[0]);
+            const hover = e => {
+                const r = svg.getBoundingClientRect(), t = Math.max(0, Math.min(xmax, ((e.clientX - r.left) * W / r.width - m.l) / pw * xmax));
+                const rows = series.map(d => ({ s: d.s, p: nearest(d.pts, t) }));
+                const ts = rows.reduce((b, r2) => Math.abs(r2.p[0] - t) < Math.abs(b - t) ? r2.p[0] : b, rows[0].p[0]);
+                xh.querySelector('line').setAttribute('x1', x(ts)); xh.querySelector('line').setAttribute('x2', x(ts));
+                rows.forEach((r2, i) => { dots[i].setAttribute('cx', x(r2.p[0])); dots[i].setAttribute('cy', y(r2.p[1])); });
+                xh.setAttribute('opacity', 1);
+                showTip(`<div class="tip-h">t = ${fmtNum(ts)} s</div>` + rows.slice().sort((a, b) => a.p[1] - b.p[1]).map(r2 => `<div class="row">${sw(r2.s)}<span>${LAB[r2.s]}</span><b>${fmtMs(r2.p[1])} ms</b></div>`).join(''), e.clientX, e.clientY);
+            };
+            const hit = svg.querySelector('.hit');
+            hit.addEventListener('pointermove', hover);
+            hit.addEventListener('pointerleave', () => { xh.setAttribute('opacity', 0); hideTip(); });
+        }
+        let chartsW = 0;
+        function drawCharts(animate) {
+            const charts = $('#charts'), data = state[state.mode];
+            if (!charts || !data) return;
+            charts.classList.toggle('animate', !!animate && !reduceMotion.matches);
+            lineChart($('#pTimeline'), data.runs);
+            barChart($('#pP99'), data.runs, { key: 'delay_p99_ms', log: true, sla: true, tick: tickMs, fmt: v => fmtMs(v) + ' ms', label: 'p99 delay' });
+            barChart($('#pLoss'), data.runs, { key: 'loss_pct', tick: v => fmtNum(v) + '%', fmt: fmtPct, label: 'Loss' });
+            barChart($('#pThr'), data.runs, { key: 'throughput_kbps', tick: v => fmtNum(v / 1000), fmt: fmtRate, label: 'Throughput' });
+            chartsW = charts.clientWidth;
+        }
+        let rafId = 0;
+        new ResizeObserver(() => {
+            cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => { const c = $('#charts'); if (c && c.clientWidth !== chartsW) drawCharts(false); });
+        }).observe($('#results'));
+
+        /* ---------- actions ---------- */
+        function setMode(mode) {
+            state.mode = mode;
+            $('#seg').dataset.mode = mode;
+            document.querySelectorAll('#seg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === mode));
+            $('#panelSim').hidden = mode !== 'sim'; $('#panelLive').hidden = mode !== 'live';
+            history.replaceState(null, '', mode === 'live' ? '#live' : '#' + state.caseId);
+            hideTip(); renderLede(); drawPipeline(); renderResults(true); syncBusy();
+        }
+        async function runSim(id) {
+            if (!state.cases[id]) id = 'tc2';
+            const seq = ++state.simSeq, t0 = performance.now(), code = parseTitle(state.cases[id].title).code;
+            state.caseId = id; state.busy.sim = true; state.err.sim = null;
+            document.querySelectorAll('.case').forEach(b => b.setAttribute('aria-current', b.dataset.id === id));
+            if (state.mode === 'sim') {
+                history.replaceState(null, '', '#' + id);
+                renderLede(); drawPipeline();
+                if (!state.sim) renderResults(); syncBusy();
+            }
+            try {
+                const data = await request('/api/run?scenario=' + encodeURIComponent(id));
+                if (seq !== state.simSeq) return;
+                const ms = performance.now() - t0;
+                state.sim = data; state.msg = { kind: 'ok', text: `${code} · ${ms < 100 ? Math.max(1, Math.round(ms)) + ' ms' : (ms / 1000).toFixed(1) + ' s'}` };
+            } catch (e) {
+                if (seq !== state.simSeq) return;
+                state.err.sim = e.message; state.msg = { kind: 'error', text: 'Simulation failed' };
+            }
+            state.busy.sim = false;
+            if (state.mode === 'sim') renderResults(true);
+            syncBusy();
         }
         async function runLive() {
-            const selected = Array.from(document.querySelectorAll('#liveSchedulers option:checked')).map(o => o.value);
-            if (!selected.length) { status('Select at least one scheduler', 'error'); return; }
-            const params = new URLSearchParams({scenario: document.getElementById('liveScenario').value,
-                duration: document.getElementById('liveDuration').value, schedulers: selected.join(',')});
-            status('Running real UDP traffic… this can take a while', 'busy');
-            try { render(await request('/api/live?' + params)); status('Live run complete'); }
-            catch (error) { status(error.message, 'error'); }
+            const schedulers = selected();
+            if (!schedulers.length) { $('#schedErr').hidden = false; return; }
+            if (state.busy.live) return;
+            const scenario = profile(), duration = +$('#dur').value, t0 = performance.now();
+            state.liveMeta = { scenario, duration, schedulers };
+            state.liveRun = { t0, per: duration + LIVE_OVERHEAD_S, schedulers };
+            state.busy.live = true; state.err.live = null;
+            $('#liveForm').disabled = true; $('#runLive').disabled = true; $('#runLive span').textContent = 'Running live traffic…';
+            const timer = setInterval(() => { if (state.mode === 'live') { renderRunStrip(); updateReadout(); } refreshStatus(); }, 250);
+            if (state.mode === 'live') { if (!state.live) renderResults(); syncBusy(); }
+            try {
+                state.live = await request('/api/live?' + new URLSearchParams({ scenario, duration, schedulers: schedulers.join(',') }));
+                state.msg = { kind: 'ok', text: `Live run · ${Math.round((performance.now() - t0) / 1000)} s` };
+            } catch (e) {
+                state.err.live = e.message; state.msg = { kind: 'error', text: 'Live run failed' };
+            }
+            clearInterval(timer);
+            state.busy.live = false; state.liveRun = null;
+            $('#liveForm').disabled = false; $('#runLive span').textContent = 'Run live traffic'; updateEstimate();
+            if (state.mode === 'live') renderResults(true);
+            syncBusy();
         }
+
+        /* ---------- wiring ---------- */
+        $('#chips').innerHTML = SCHED.map(s => `<label class="chip"><input type="checkbox" value="${s}" checked><span>${icon('check', 'ck')}${sw(s)}${LAB[s]}</span></label>`).join('');
+        $('#seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.mode !== state.mode) setMode(b.dataset.mode); });
+        $('#cases').addEventListener('click', e => { const b = e.target.closest('.case'); if (b) runSim(b.dataset.id); });
+        $('#runLive').addEventListener('click', runLive);
+        $('#dur').addEventListener('input', updateEstimate);
+        $('#chips').addEventListener('change', () => { $('#schedErr').hidden = selected().length > 0; updateEstimate(); });
+        $('#panelLive').addEventListener('change', e => { if (e.target.name === 'profile') { renderLede(); drawPipeline(); } });
+        $('#results').addEventListener('click', e => {
+            if (e.target.closest('[data-retry]')) return state.mode === 'live' ? runLive() : Object.keys(state.cases).length ? runSim(state.caseId) : init();
+            const b = e.target.closest('.lg');
+            if (b) { state.focus = state.focus === b.dataset.l ? null : b.dataset.l; applyFocus(state.focus); }
+        });
+        $('#results').addEventListener('pointerover', e => { const b = e.target.closest('.lg'); if (b) applyFocus(b.dataset.l); });
+        $('#results').addEventListener('pointerout', e => { if (e.target.closest('.lg') && !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.lg'))) applyFocus(state.focus); });
+        reduceMotion.addEventListener('change', () => { const svg = $('#pipeSvg svg'); if (svg) reduceMotion.matches ? svg.pauseAnimations() : svg.unpauseAnimations(); });
+
+        async function init() {
+            const hash = location.hash.slice(1);
+            state.err.sim = null; updateEstimate();
+            setMode(hash === 'live' ? 'live' : 'sim');
+            try {
+                state.cases = await request('/api/scenarios');
+            } catch (e) {
+                state.err.sim = e.message; state.msg = { kind: 'error', text: 'Server unreachable' };
+                if (state.mode === 'sim') renderResults(); refreshStatus();
+                return;
+            }
+            $('#caseCount').textContent = Object.keys(state.cases).length + ' scenarios';
+            $('#cases').innerHTML = Object.entries(state.cases).map(([id, c]) => {
+                const t = parseTitle(c.title);
+                return `<li><button class="case" type="button" data-id="${esc(id)}" aria-current="false"><span class="case-code">${esc(t.code)}</span><span><span class="case-name">${esc(t.name)}</span>${t.detail ? `<span class="case-detail">${esc(t.detail)}</span>` : ''}</span></button></li>`;
+            }).join('');
+            runSim(state.cases[hash] ? hash : 'tc2');
+        }
+        init();
     </script>
 </body>
 
