@@ -1,244 +1,801 @@
 # QoS-Aware Emergency Traffic Prioritization
 
-Classify **voice, video, emergency and ordinary traffic** and prioritise packets during congestion
-with scheduling algorithms. The project contains a custom protocol (QEP), a multi-stage classifier,
-five schedulers (FIFO, Strict Priority, WFQ, DRR and a proposed hybrid **EPS**), a discrete-event
-simulator with 10 test cases (normal, congestion, outage, degradation, attack, noise, starvation,
-lossy link, load sweep), a live UDP demo with a real software QoS router, a Mininet/`tc` emulation,
-a web dashboard and Wireshark verification tooling.
+[![Project Demo](https://img.youtube.com/vi/r4yKdgUciPI/maxresdefault.jpg)](https://www.youtube.com/watch?v=r4yKdgUciPI)
 
-**Zero dependencies** - everything runs on the Python 3.8+ standard library
-(Mininet, tshark and Wireshark are optional).  Quick start: see `instructions.txt`.
 
-```
-python3 -m unittest -v tests.test_qos          # 31 tests, ~20 s
-python3 run_simulation.py --scenario all       # every test case -> results/report_all.html
-python3 live/run_live_demo.py                  # real sockets, real rate-limited router
-python3 dashboard/server.py                    # http://localhost:8080
-```
+A QoS-aware network traffic management system that classifies voice, video, emergency and ordinary traffic, then prioritizes packets during network congestion using multiple scheduling algorithms.
 
-The dashboard has separate Simulation and Live demo views. The live view runs real loopback UDP
-traffic through the software QoS router and displays class metrics, SLA results, router counters,
-and emergency-delay charts alongside the simulator's results. The server prints timestamped request,
-simulation, and live-run logs to the terminal where it was started.
+The project implements a custom protocol (QEP), a multi-stage traffic classifier, five scheduling algorithms (FIFO, Strict Priority, WFQ, DRR and the proposed hybrid EPS), a discrete-event simulator with 10 test scenarios, a live UDP demonstration with a software QoS router, Mininet/`tc` emulation, an interactive web dashboard and Wireshark verification tooling.
 
----------------------------------------------------------------------------------------------------
+**Zero external Python dependencies.** Everything runs on the Python 3.8+ standard library. Mininet, tshark and Wireshark are optional.
 
-## 1. Problem statement and objectives
+## Table of Contents
 
-During disasters, the traffic that matters most (alarms, sensor telemetry, dispatch voice) shares links with bulk data. A plain FIFO queue gives every packet the same fate: when the bottleneck
-saturates, emergency packets wait behind (or are dropped with) bulk traffic.
+- [1. Project Overview](#1-project-overview)
+- [2. Problem Statement and Objectives](#2-problem-statement-and-objectives)
+- [3. Architecture and Network Topology](#3-architecture-and-network-topology)
+- [4. Custom Protocol: QEP](#4-custom-protocol-qep)
+- [5. Multi-Stage Traffic Classifier](#5-multi-stage-traffic-classifier)
+- [6. Packet Scheduling Algorithms](#6-packet-scheduling-algorithms)
+- [7. Implementation Overview](#7-implementation-overview)
+- [8. Test Scenarios and Results](#8-test-scenarios-and-results)
+- [9. Wireshark and Packet-Level Verification](#9-wireshark-and-packet-level-verification)
+- [10. Design Iterations and Improvements](#10-design-iterations-and-improvements)
+- [11. Limitations and Future Work](#11-limitations-and-future-work)
+- [12. Installation and Execution](#12-installation-and-execution)
 
-**Objectives**
+---
 
-| # | Objective | How it is measured |
-|---|-----------|--------------------|
-| O1 | Classify packets into emergency / voice / video / best-effort, robustly against missing or wrong markings | classification accuracy, flow-cache hit ratio (TC7) |
-| O2 | Keep emergency & voice delay, jitter, loss within SLA during congestion | p99 delay, jitter, loss vs SLA (TC2, TC3) |
-| O3 | Survive link failures and recover quickly | emergency loss, recovery time (TC4, TC5) |
-| O4 | Not be abusable: a flow that *claims* to be emergency must not destroy other traffic | TC6 |
-| O5 | Not starve lower classes | best-effort throughput, video loss (TC8) |
-| O6 | Quantify the trade-off between schedulers | load sweep (TC10) |
+## 1. Project Overview
 
-**SLA targets used for PASS/FAIL**: emergency p99 delay <= 50 ms and loss <= 0.1 %; voice p99 <= 150 ms,
-jitter <= 30 ms, loss <= 1 %; video p99 <= 300 ms, loss <= 2 %. Delay is one-way (queueing +
-serialization + 5 ms propagation).
+QoS-Aware Emergency Traffic Prioritization is a network traffic management project designed to ensure that critical communications receive preferential treatment during periods of congestion.
 
-## 2. Architecture and topology
+It combines traffic classification, packet scheduling, traffic policing, queue management and performance monitoring to evaluate how different Quality of Service (QoS) strategies behave under realistic network conditions.
 
-![architecture](docs/architecture.svg)
+### Key Features
 
-Logical topology (simulation, live demo and Mininet all model the same thing):
+- **Custom QEP Protocol:** A 24-byte packet header carrying traffic class, flow ID, sequence number, timestamp and checksum.
+- **Multi-Stage Classifier:** Identifies traffic using QEP headers, DSCP markings, UDP ports and flow caching.
+- **Five Scheduling Algorithms:** FIFO, Strict Priority, Weighted Fair Queueing, Deficit Round Robin and the proposed Emergency Priority Scheduler.
+- **EPS Hybrid Scheduler:** Combines strict priority, weighted fair queueing, token-bucket policing and shared-buffer push-out.
+- **Discrete-Event Simulator:** Models congestion, link outages, degradation, malicious traffic, packet loss and other network conditions.
+- **Live UDP Demonstration:** Sends real UDP packets through a software QoS router using actual network sockets.
+- **Mininet Emulation:** Provides an optional Linux-based network emulation using `tc`.
+- **Interactive Web Dashboard:** Separate Simulation and Live Demo views with class metrics, SLA results, router counters and emergency-delay charts.
+- **Wireshark Verification:** Custom QEP dissector and packet capture tooling for protocol-level inspection.
+- **Automated Testing:** 31 unit and scenario tests.
 
-```
- h_voice  (10.0.1.1, EF)  --\
- h_video  (10.0.1.2, AF41) --+-- s1 -- r1 (classifier + scheduler)  ==10 Mbit/s bottleneck== s2 -- h_srv (10.0.2.2)
- h_emerg  (10.0.1.3, CS6) --+                                         (5 ms propagation)
- h_bulk   (10.0.1.4, BE)  --/
-```
+### Quick Start
 
-Only the router egress port is congested, so the scheduler is the only variable that changes
-between runs - results isolate its effect.
+```bash
+# Run automated tests
+python3 -m unittest -v tests.test_qos
 
-## 3. Protocol / message-format design (QEP)
+# Run all simulation scenarios
+python3 run_simulation.py --scenario all
 
-Each datagram is `IPv4 (DSCP) | UDP | 24-byte QEP header | payload`.
+# Run the live UDP demonstration
+python3 live/run_live_demo.py
 
-```
- 0               1               2               3
- +---------------+---------------+---------------+---------------+
- |       Magic 0x5145 'QE'       | Ver(4)|Class(4)|   Flags (8)   |
- +---------------+---------------+---------------+---------------+
- |           Flow ID             |   DSCP (8)    |  Reserved (8) |
- +---------------+---------------+---------------+---------------+
- |                       Sequence number (32)                    |
- +---------------------------------------------------------------+
- |                  Timestamp, ns since epoch (64)               |
- +---------------+---------------+---------------+---------------+
- |        Payload length         |     Header checksum (16)      |
- +---------------+---------------+---------------+---------------+
+# Start the web dashboard
+python3 dashboard/server.py
 ```
 
-| Field | Meaning |
-|---|---|
-| Class | 0 emergency, 1 voice, 2 video, 3 best effort (== strict priority number) |
-| Flags | `0x01` ALERT (first packet of an emergency event), `0x02` RETX, `0x04` LAST, `0x08` PREEMPT_REQUEST |
-| Timestamp | sender clock - lets the receiver / Wireshark compute one-way delay |
-| Checksum | RFC 1071 Internet checksum over the header (field zeroed) - corrupted headers are rejected |
+Open the dashboard at:
 
-| Class | DSCP | UDP port | Typical source |
-|---|---|---|---|
-| Emergency | 48 (CS6) | 5911 | alarms, sensor events (172 B, 5-60 pps/source) |
-| Voice | 46 (EF) | 5004 | G.711-like, 212 B every 20 ms (85 kbit/s per call) |
-| Video | 34 (AF41) | 5006 | 30 fps, I-frame x4 every second, 1252 B packets in bursts |
-| Best effort | 0 | 5201 / 80 / 443 / 8080 | bursty bulk (TCP-like), 200-1500 B |
+http://localhost:8080
 
-Reference: `qos/protocol.py`; Wireshark dissector: `docs/qep_dissector.lua`.
+See `instructions.txt` for detailed setup and execution instructions.
 
-## 4. Classifier (`qos/classifier.py`)
+---
 
-Staged, cheapest-trustworthy-first: **QEP header -> DSCP -> UDP port -> flow cache -> default (BE)**.
-DSCP 0 is treated as "unknown" (a stripped marking looks identical to best effort), so it falls through
-to later stages. The *flow cache* remembers the class of a flow once any packet of it was identified, so
-later packets with stripped/corrupted markings are still classified correctly - this is what turns
-99.7 % (stateless) into 100 % accuracy (TC7).
+## 2. Problem Statement and Objectives
 
-## 5. Scheduling algorithms (`qos/schedulers.py`)
+During emergencies and disasters, critical network traffic such as alarms, sensor telemetry and emergency dispatch communications shares network infrastructure with ordinary data traffic.
 
-| Name | Description | Weakness it exposes |
+A conventional FIFO queue treats every packet equally. When the network bottleneck becomes saturated, emergency packets may experience excessive delays or packet loss because they are queued behind bulk data.
+
+This project investigates how intelligent traffic classification and packet scheduling can improve network performance for critical traffic.
+
+### Objectives
+
+| # | Objective | Measurement |
 |---|---|---|
-| `fifo` | single tail-drop queue (baseline, no QoS) | everything suffers equally |
-| `pq` | strict priority, per-class buffers | starves low classes; trusts markings |
-| `wfq` | Self-Clocked Fair Queueing, weights 40/30/20/10 | emergency only gets its weight under attack |
-| `drr` | Deficit Round Robin, same weights | coarser delay (quantum rounds) |
-| **`eps`** | **proposed hybrid** (below) | needs call-admission control for voice over-subscription |
+| O1 | Classify packets into emergency, voice, video and best-effort traffic, even with missing or incorrect markings | Classification accuracy, flow-cache hit ratio (TC7) |
+| O2 | Maintain emergency and voice delay, jitter and loss within SLA during congestion | p99 delay, jitter and packet loss (TC2, TC3) |
+| O3 | Survive link failures and recover quickly | Emergency packet loss and recovery time (TC4, TC5) |
+| O4 | Prevent abuse by flows falsely claiming emergency priority | Performance under spoofed traffic (TC6) |
+| O5 | Prevent starvation of lower-priority traffic | Best-effort throughput and video loss (TC8) |
+| O6 | Quantify performance trade-offs between scheduling algorithms | Load sweep (TC10) |
 
-**EPS (Emergency Priority Scheduler)** combines the best parts:
+### SLA Targets
 
-1. **Tier 1 - Emergency**: strict highest priority.
-2. **Tier 2 - Voice**: strict second priority.
-3. **Tier 3 - Video : Best-effort** share the rest by WFQ (6 : 4) -> no starvation.
-4. **Policing for tiers 1-2**: a packet must conform to a *per-flow* token bucket **and** an *aggregate*
-   class bucket (emergency 20 % of link, voice 35 %). Out-of-profile packets are **re-marked to best
-   effort**, not dropped. Per-flow policing is what stops one spoofed flow from eating the aggregate
-   reservation and demoting genuine alarms (a first version without it failed TC6 - see section 9).
-5. **Shared buffer with push-out**: when the buffer is full, an arriving higher-class packet evicts tail
-   packets of lower classes, so emergency traffic never loses its buffer slot to bulk data. Video and BE
-   have per-queue caps to limit bufferbloat.
+The following Service Level Agreement (SLA) thresholds are used to determine PASS/FAIL results.
 
-## 6. Implementation overview
+| Traffic Class | p99 Delay | Jitter | Packet Loss |
+|---|---:|---:|---:|
+| Emergency | ≤ 50 ms | — | ≤ 0.1% |
+| Voice | ≤ 150 ms | ≤ 30 ms | ≤ 1% |
+| Video | ≤ 300 ms | — | ≤ 2% |
+
+Delay is measured as one-way delay, including queueing, serialization and 5 ms propagation.
+
+---
+
+## 3. Architecture and Network Topology
+
+The simulation, live demonstration and Mininet environment model the same logical network architecture.
+
+![Network Architecture](docs/architecture.svg)
+
+### Logical Network Topology
+
+```text
+h_voice  (10.0.1.1, EF)  ----\
+h_video  (10.0.1.2, AF41) ---+--- s1 --- r1 --- 10 Mbit/s bottleneck --- s2 --- h_srv (10.0.2.2)
+h_emerg  (10.0.1.3, CS6)  ---+             (Classifier + Scheduler)      |
+h_bulk   (10.0.1.4, BE)   ---/                                          |
+                                                                   5 ms propagation
+```
+
+### Network Components
+
+| Component | Responsibility |
+|---|---|
+| h_voice | Generates voice traffic |
+| h_video | Generates video traffic |
+| h_emerg | Generates emergency traffic |
+| h_bulk | Generates ordinary best-effort traffic |
+| s1 | Connects traffic-generating hosts |
+| r1 | Performs traffic classification, policing and packet scheduling |
+| s2 | Connects the bottleneck to the destination |
+| h_srv | Receives forwarded traffic |
+
+**Important design decision:** Only the router egress port is congested. This ensures that the scheduler is the primary variable changing between experiments, allowing a controlled comparison of scheduling algorithms.
+
+---
+
+## 4. Custom Protocol: QEP
+
+The project implements a custom packet protocol called **QEP (QoS Emergency Protocol)**.
+
+Each datagram follows this structure:
+
+```text
+IPv4 (DSCP) | UDP | 24-byte QEP Header | Payload
+```
+
+### QEP Header Structure
+
+```text
+0               1               2               3
++---------------+---------------+---------------+---------------+
+|       Magic 0x5145 'QE'       | Ver(4)|Class(4)|   Flags (8)   |
++---------------+---------------+---------------+---------------+
+|           Flow ID             |   DSCP (8)    |  Reserved (8) |
++---------------+---------------+---------------+---------------+
+|                       Sequence number (32)                    |
++---------------------------------------------------------------+
+|                  Timestamp, ns since epoch (64)               |
++---------------+---------------+---------------+---------------+
+|        Payload length         |     Header checksum (16)      |
++---------------+---------------+---------------+---------------+
+```
+
+### Header Fields
+
+| Field | Description |
+|---|---|
+| Magic | Protocol identifier `0x5145` (`QE`) |
+| Version | Protocol version |
+| Class | Traffic class: 0 emergency, 1 voice, 2 video, 3 best effort |
+| Flags | Packet control flags |
+| Flow ID | Identifies the originating traffic flow |
+| DSCP | Differentiated Services Code Point marking |
+| Reserved | Reserved for future protocol extensions |
+| Sequence Number | Tracks packet ordering and loss |
+| Timestamp | Sender timestamp in nanoseconds since epoch |
+| Payload Length | Length of the packet payload |
+| Header Checksum | RFC 1071 Internet checksum over the header, with the checksum field zeroed during calculation |
+
+### QEP Flags
+
+| Flag | Value | Description |
+|---|---|---|
+| ALERT | `0x01` | First packet of an emergency event |
+| RETX | `0x02` | Retransmission indicator |
+| LAST | `0x04` | Last packet in a transmission |
+| PREEMPT_REQUEST | `0x08` | Requests priority preemption |
+
+### Traffic Classes and Markings
+
+| Class | DSCP | UDP Port | Typical Source |
+|---|---:|---:|---|
+| Emergency | 48 (CS6) | 5911 | Alarms and sensor events |
+| Voice | 46 (EF) | 5004 | G.711-like voice packets |
+| Video | 34 (AF41) | 5006 | Video streams |
+| Best Effort | 0 (BE) | 5201 / 80 / 443 / 8080 | Bulk and ordinary data |
+
+### Traffic Generation Profiles
+
+| Traffic | Packet Characteristics |
+|---|---|
+| Emergency | 172 bytes, 5–60 packets/sec per source |
+| Voice | 212 bytes every 20 ms, approximately 85 kbit/s per call |
+| Video | 30 FPS, I-frame bursts at 4× frequency, 1252-byte packets |
+| Best Effort | Bursty TCP-like traffic, 200–1500 bytes |
+
+**Implementation:** `qos/protocol.py`
+
+**Wireshark dissector:** `docs/qep_dissector.lua`
+
+---
+
+## 5. Multi-Stage Traffic Classifier
+
+Implementation: `qos/classifier.py`
+
+The classifier uses a staged, cheapest-trustworthy-first approach to identify incoming packets.
+
+### Classification Pipeline
+
+```text
+             Incoming Packet
+                    |
+                    v
+              QEP Header?
+               /      \
+             Yes       No
+              |         |
+              v         v
+          QEP Class   DSCP Marking?
+                       /       \
+                     Yes        No
+                      |          |
+                      v          v
+                 DSCP Class   UDP Port?
+                              /      \
+                            Yes       No
+                             |         |
+                             v         v
+                         Port Class  Flow Cache?
+                                     /       \
+                                   Hit       Miss
+                                    |          |
+                                    v          v
+                               Cached Class  Best Effort
+```
+
+The actual classification order is:
+
+1. QEP header
+2. DSCP marking
+3. UDP port
+4. Flow cache
+5. Default to best effort
+
+### Flow Cache
+
+The flow cache remembers the classification of a flow once a packet has been successfully identified.
+
+Subsequent packets belonging to the same flow can retain their classification even when DSCP markings are stripped or corrupted.
+
+DSCP value 0 is treated as unknown because a stripped marking is indistinguishable from ordinary best-effort traffic.
+
+This mechanism improves classification accuracy from 99.72% to 100% in TC7.
+
+---
+
+## 6. Packet Scheduling Algorithms
+
+Implementation: `qos/schedulers.py`
+
+The project evaluates five scheduling algorithms.
+
+| Algorithm | Description | Main Weakness |
+|---|---|---|
+| FIFO | Single tail-drop queue; all packets are treated equally | No prioritization |
+| Strict Priority (PQ) | Separate per-class queues; higher-priority packets are served first | Can starve lower classes and trusts markings |
+| WFQ | Self-Clocked Fair Queueing with weights 40/30/20/10 | Emergency receives only its allocated share under attack |
+| DRR | Deficit Round Robin using the same weights | Coarser delay due to quantum rounds |
+| EPS | Proposed hybrid scheduler combining priority, weighted sharing and policing | Requires call admission control for voice oversubscription |
+
+### Proposed Hybrid Scheduler: EPS
+
+The **Emergency Priority Scheduler (EPS)** combines strict priority for critical traffic with weighted sharing for lower-priority traffic.
+
+Its design consists of five mechanisms.
+
+**1. Tier 1 – Emergency**
+
+Emergency packets receive the highest scheduling priority.
+
+**2. Tier 2 – Voice**
+
+Voice traffic receives the second-highest priority, ensuring low latency for real-time communication.
+
+**3. Tier 3 – Video and Best Effort**
+
+Video and best-effort traffic share the remaining bandwidth through WFQ with a 6:4 weight ratio.
+
+This prevents lower-priority traffic from being completely starved.
+
+**4. Token-Bucket Policing**
+
+Emergency and voice traffic must conform to both:
+
+- A per-flow token bucket.
+- An aggregate class token bucket.
+
+The aggregate limits are:
+
+| Class | Maximum Aggregate Rate |
+|---|---:|
+| Emergency | 20% of link capacity |
+| Voice | 35% of link capacity |
+
+Packets exceeding their permitted profile are re-marked as best effort rather than dropped.
+
+Per-flow policing prevents a single spoofed flow from consuming the aggregate reservation and demoting genuine emergency traffic.
+
+**5. Shared Buffer with Push-Out**
+
+EPS uses a shared buffer with packet push-out.
+
+When the buffer is full, an arriving higher-priority packet can evict tail packets belonging to lower-priority classes.
+
+Additionally, video and best-effort queues have individual capacity limits to reduce bufferbloat.
+
+---
+
+## 7. Implementation Overview
+
+The project is organized into modular components shared across the simulation, live demo and Mininet environments.
 
 | Path | Purpose |
 |---|---|
-| `qos/protocol.py`, `classifier.py`, `schedulers.py`, `packet.py` | protocol, classifier, schedulers (shared by all three environments) |
-| `qos/traffic.py`, `simulator.py`, `metrics.py`, `scenarios.py` | traffic models, event-driven bottleneck link (outage/degradation/loss), metrics, test-case catalogue |
-| `qos/report.py`, `qos/pcapio.py` | Markdown / CSV / HTML+SVG reports, pcap writer/reader |
-| `run_simulation.py` | CLI for all test cases |
-| `live/` | real UDP sender, software QoS router, receiver, analyzer, one-command demo |
-| `mininet/mn_qos_topo.py` | Mininet topology + `tc` tbf / prio / htb with DSCP filters |
-| `dashboard/` | stdlib web dashboard for simulations and the live UDP demo |
-| `tools/pcap_verify.py`, `docs/qep_dissector.lua` | packet-level verification |
-| `tests/test_qos.py` | 31 automated tests (unit + scenario assertions) |
+| `qos/protocol.py` | QEP protocol and packet header |
+| `qos/classifier.py` | Multi-stage traffic classifier |
+| `qos/schedulers.py` | FIFO, PQ, WFQ, DRR and EPS |
+| `qos/packet.py` | Packet representation |
+| `qos/traffic.py` | Traffic generation models |
+| `qos/simulator.py` | Discrete-event bottleneck simulator |
+| `qos/metrics.py` | Performance metrics and SLA evaluation |
+| `qos/scenarios.py` | Test scenario catalogue |
+| `qos/report.py` | Markdown, CSV and HTML+SVG reports |
+| `qos/pcapio.py` | PCAP packet writer and reader |
+| `run_simulation.py` | Simulation CLI |
+| `live/` | UDP sender, software QoS router, receiver and analyzer |
+| `mininet/mn_qos_topo.py` | Mininet topology and `tc` configuration |
+| `dashboard/` | Standard-library web dashboard |
+| `tools/pcap_verify.py` | Packet-level verification |
+| `docs/qep_dissector.lua` | Wireshark QEP dissector |
+| `tests/test_qos.py` | Automated test suite |
 
-Metrics: one-way delay (avg/p50/p95/p99/max), jitter (mean |delay variation| of consecutive packets
-per flow), loss (queue / push-out / link), throughput, SLA verdicts, recovery time (time after a failure
-ends until emergency delay is back under 100 ms), classification accuracy, flow-cache hit ratio.
+### Performance Metrics
 
-## 7. Test cases and results (simulation, 10 Mbit/s link, seed 1, 20 s runs)
+The simulator measures:
 
-Offered load: voice 20 calls (1.7 Mbit/s), video 3 streams (3 Mbit/s), emergency 10 sources, bulk traffic.
-`P/F` = SLA verdict for emergency / voice / video. Full tables: `results/summary_all.md`, charts: `results/report_all.html`.
+- One-way delay: average, p50, p95, p99 and maximum.
+- Jitter: mean absolute delay variation between consecutive packets of each flow.
+- Packet loss: queue drops, push-out drops and link loss.
+- Throughput.
+- SLA verdicts.
+- Recovery time after link failures.
+- Classification accuracy.
+- Flow-cache hit ratio.
 
-| TC | Condition | FIFO | Strict PQ | WFQ | DRR | **EPS** |
-|----|-----------|------|-----------|-----|-----|---------|
-| **TC1** normal (~70 %) | EM p99 ms / SLA | 42.4 P/P/P | 6.3 P/P/P | 6.3 P/P/P | 9.4 P/P/P | 6.3 P/P/P |
-| **TC2** congestion (~170 %) | EM p99 ms / EM loss % / SLA | 105.5 / 2.91 **F/F/F** | 6.3 / 0 P/P/P | 6.5 / 0 P/P/P | 9.8 / 0 P/P/P | 6.3 / 0 P/P/P |
-| **TC3** disaster surge in congestion | EM p99 ms / EM loss % | 105.4 / 2.54 **F** | 6.3 / 0 P | 7.3 / 0 P | 10.1 / 0 P | 6.3 / 0 P |
-| **TC4** 2 s link outage | EM loss % / recovery ms | 19.9 / 7163 | 16.4 / 0.9 | 16.4 / 0 | 16.4 / 0 | **0.0** / 0 |
-| **TC5** capacity drops to 35 % | EM p99 / voice p99 ms | 291.6 / 291.5 **F/F** | 8.2 / 9.6 P/P | 10.2 / 181.8 P/**F** | 27.4 / 180.5 P/**F** | 8.4 / 9.7 P/P |
-| **TC6** spoofed 8 Mbit/s "emergency" flood | EM loss % / video loss % | 1.53 / 24.8 F | 0.69 / **50.2** F | 2.28 / 28.0 F | 4.72 / 27.7 F | **0.00 / 0.00** P/P/P |
-| **TC7** noisy markings | classification accuracy / EM SLA | - / F | P | P | P | 100 % / P |
-| **TC8** voice over-subscription (90 calls) | BE kbit/s / video loss % | 885 / 56 | **15 / 39** | 1643 / 8.1 | 1643 / 8.1 | 149 / 0.07 |
-| **TC9** 2 % random link loss | EM p99 ms / EM loss % | 104 / 2.5 | 6.3 / 2.0 | 6.4 / 1.9 | 9.7 / 1.5 | 6.3 / 2.1 |
+---
 
-**TC10 load sweep** - emergency p99 delay (ms) as bulk load grows 1 -> 15 Mbit/s:
-FIFO `36 -> 57 -> 105 -> 105 ...` (grows until the buffer limit), all QoS schedulers stay flat
-(PQ/EPS 6.3 ms, WFQ ~7 ms, DRR ~10 ms).
+## 8. Test Scenarios and Results
 
-**Classifier ablation (TC7 noise: 25 % DSCP stripped, 10 % wrong port, header on 80 %)**
+The project includes 10 test scenarios to evaluate scheduler behaviour under different network conditions.
 
-| Mode | Accuracy | Emergency loss | Emergency p99 |
-|---|---|---|---|
-| DSCP only | 85.86 % | 1.23 % | 117 ms |
-| DSCP + port | 98.46 % | 0.23 % | 117 ms |
-| header only | 88.25 % | 1.41 % | 118 ms |
-| header + DSCP + port (stateless) | 99.72 % | 0.00 % | 6.3 ms |
-| **+ flow cache (full)** | **100.00 %** (32.7 % of packets served from cache) | 0.00 % | 6.3 ms |
+### Simulation Configuration
 
-**Live demo (real UDP sockets, 1 Mbit/s software router, ~190 % offered load, 8 s)** - `results/live_*.txt`
+| Parameter | Value |
+|---|---|
+| Bottleneck capacity | 10 Mbit/s |
+| Simulation duration | 20 seconds |
+| Random seed | 1 |
+| Voice traffic | 20 calls (1.7 Mbit/s) |
+| Video traffic | 3 streams (3 Mbit/s) |
+| Emergency traffic | 10 sources |
+| Additional traffic | Bulk best-effort traffic |
 
-| Scheduler | Emergency p99 / loss | Voice p99 | SLA (EM/VO/VI) |
-|---|---|---|---|
-| FIFO | 200.7 ms / 3.3 % | 202.2 ms | F/F/F |
-| Strict PQ | 12.0 ms / 0 % | 14.7 ms | P/P/P |
-| WFQ | 13.8 ms / 0 % | 13.7 ms | P/P/P |
-| DRR | 38.3 ms / 0 % | 36.4 ms | P/P/P |
-| EPS | 11.9 ms / 0 % | 15.1 ms | P/P/P |
-| *with 900 kbit/s spoofed flood:* FIFO / PQ / EPS | 203 ms / **30.3 ms, 0.62 % loss** / **13.6 ms, 0 %** | 202 / 112 / 19.6 ms | F,F,F / F,P,F / **P,P,P** |
+**P/F** indicates the SLA verdict for Emergency / Voice / Video.
 
-Live numbers vary a few ms between runs (OS scheduling); the ordering is stable.
+### TC1 – Normal Network Conditions (~70% Load)
 
-### Honest observations (read these before the viva)
-* **TC1**: at ~70 % load even FIFO meets the SLA - QoS only matters under congestion. That is the expected baseline.
-* **TC2/TC3**: *any* QoS scheduler fixes congestion for emergency/voice because those flows are low-rate.
-  WFQ/DRR are slightly slower than strict priority (weighted sharing, DRR round granularity).
-* **TC4**: every scheduler "fails" the whole-run SLA because packets arriving *during* the 2 s outage
-  are stuck for up to 2 s. What differs is **loss**: EPS loses 0 % emergency packets (push-out keeps their
-  buffer space) vs 16-20 % for the others, and recovery after the link returns.
-* **TC5**: video must degrade (3 Mbit/s demand, ~1.5 Mbit/s left) - EPS and PQ protect emergency + voice; WFQ/DRR let voice suffer.
-* **TC6**: strict PQ and WFQ/DRR lose emergency SLA under a spoofed flood; EPS holds because of per-flow policing.
-  *Limitation*: an attacker using many flow IDs would be bounded only by the aggregate cap -> real deployments need
-  authentication of emergency sources (e.g. HMAC token in the QEP reserved field, or an allow-list).
-* **TC8**: strict PQ starves bulk (15 kbit/s) and video (39 % loss). EPS protects video and BE but because voice is
-  capped at 35 % of the link, 90 calls (7.6 Mbit/s) exceed it and ~20 % of voice is demoted. In practice this is solved
-  with **call admission control**, which is outside this project.
-* **TC9**: random link loss hits all classes equally (~2 %) - scheduling cannot fix it; FEC/retransmission (QEP `RETX` flag) would.
+Emergency p99 delay in milliseconds.
 
-## 8. Wireshark / packet-level verification
+| Scheduler | Emergency p99 | SLA (EM/VO/VI) |
+|---|---:|---|
+| FIFO | 42.4 ms | P/P/P |
+| Strict PQ | 6.3 ms | P/P/P |
+| WFQ | 6.3 ms | P/P/P |
+| DRR | 9.4 ms | P/P/P |
+| **EPS** | **6.3 ms** | **P/P/P** |
 
-* `run_simulation.py --scenario tc2 --pcap results/tc2_eps.pcap --pcap-scheduler eps` writes the packets *as they leave
-  the bottleneck* (Ethernet/IPv4/UDP/QEP, real DSCP bits, valid IP checksums). Open it in Wireshark with
-  `wireshark -X lua_script:docs/qep_dissector.lua results/tc2_eps.pcap`; filters: `qep.cls == 0`, `ip.dsfield.dscp == 48`,
-  `qep.flags.alert == 1`, `qep && frame.time_delta_displayed > 0.05`.
-* The QEP timestamp holds the arrival time at the bottleneck, so *capture time - QEP timestamp* = queueing + serialization delay.
-  `tools/pcap_verify.py` automates this and also checks header checksums and DSCP/class consistency:
+### TC2 – Network Congestion (~170% Load)
 
+| Scheduler | Emergency p99 | Emergency Loss | SLA |
+|---|---:|---:|---|
+| FIFO | 105.5 ms | 2.91% | F/F/F |
+| Strict PQ | 6.3 ms | 0% | P/P/P |
+| WFQ | 6.5 ms | 0% | P/P/P |
+| DRR | 9.8 ms | 0% | P/P/P |
+| **EPS** | **6.3 ms** | **0%** | **P/P/P** |
+
+### TC3 – Disaster Surge During Congestion
+
+| Scheduler | Emergency p99 | Emergency Loss | Emergency SLA |
+|---|---:|---:|---|
+| FIFO | 105.4 ms | 2.54% | F |
+| Strict PQ | 6.3 ms | 0% | P |
+| WFQ | 7.3 ms | 0% | P |
+| DRR | 10.1 ms | 0% | P |
+| **EPS** | **6.3 ms** | **0%** | **P** |
+
+### TC4 – 2-Second Link Outage
+
+| Scheduler | Emergency Loss | Recovery Time |
+|---|---:|---:|
+| FIFO | 19.9% | 7163 ms |
+| Strict PQ | 16.4% | 0.9 ms |
+| WFQ | 16.4% | 0 ms |
+| DRR | 16.4% | 0 ms |
+| **EPS** | **0.0%** | **0 ms** |
+
+### TC5 – Network Capacity Degradation to 35%
+
+| Scheduler | Emergency p99 | Voice p99 | SLA (EM/VO) |
+|---|---:|---:|---|
+| FIFO | 291.6 ms | 291.5 ms | F/F |
+| Strict PQ | 8.2 ms | 9.6 ms | P/P |
+| WFQ | 10.2 ms | 181.8 ms | P/F |
+| DRR | 27.4 ms | 180.5 ms | P/F |
+| **EPS** | **8.4 ms** | **9.7 ms** | **P/P** |
+
+### TC6 – Spoofed Emergency Traffic Flood (8 Mbit/s)
+
+| Scheduler | Emergency Loss | Video Loss | Result |
+|---|---:|---:|---|
+| FIFO | 1.53% | 24.8% | F |
+| Strict PQ | 0.69% | 50.2% | F |
+| WFQ | 2.28% | 28.0% | F |
+| DRR | 4.72% | 27.7% | F |
+| **EPS** | **0.00%** | **0.00%** | **P/P/P** |
+
+### TC7 – Noisy Traffic Markings
+
+Classification accuracy and emergency SLA.
+
+| Scheduler / Classifier Mode | Classification Accuracy | Emergency SLA |
+|---|---:|---|
+| FIFO | — | F |
+| Strict PQ | — | P |
+| WFQ | — | P |
+| DRR | — | P |
+| **EPS (Full Classifier)** | **100.00%** | **P** |
+
+### TC8 – Voice Oversubscription (90 Calls)
+
+| Scheduler | Best-Effort Throughput | Video Loss |
+|---|---:|---:|
+| FIFO | 885 kbit/s | 56% |
+| Strict PQ | 15 kbit/s | 39% |
+| WFQ | 1643 kbit/s | 8.1% |
+| DRR | 1643 kbit/s | 8.1% |
+| **EPS** | **149 kbit/s** | **0.07%** |
+
+### TC9 – Random Link Loss (2%)
+
+| Scheduler | Emergency p99 | Emergency Loss |
+|---|---:|---:|
+| FIFO | 104 ms | 2.5% |
+| Strict PQ | 6.3 ms | 2.0% |
+| WFQ | 6.4 ms | 1.9% |
+| DRR | 9.7 ms | 1.5% |
+| **EPS** | **6.3 ms** | **2.1%** |
+
+### TC10 – Load Sweep
+
+Emergency p99 delay as bulk traffic increases from 1 to 15 Mbit/s.
+
+| Scheduler | Emergency p99 Behaviour |
+|---|---|
+| FIFO | 36 → 57 → 105 → 105 ... ms |
+| Strict PQ | Approximately 6.3 ms |
+| WFQ | Approximately 7 ms |
+| DRR | Approximately 10 ms |
+| **EPS** | **Approximately 6.3 ms** |
+
+### Classifier Ablation Study (TC7)
+
+TC7 evaluates classification accuracy under noisy markings:
+
+- 25% DSCP markings stripped.
+- 10% incorrect UDP port markings.
+- QEP headers available on 80% of packets.
+
+| Classifier Configuration | Accuracy | Emergency Loss | Emergency p99 |
+|---|---:|---:|---:|
+| DSCP only | 85.86% | 1.23% | 117 ms |
+| DSCP + Port | 98.46% | 0.23% | 117 ms |
+| Header only | 88.25% | 1.41% | 118 ms |
+| Header + DSCP + Port (Stateless) | 99.72% | 0.00% | 6.3 ms |
+| **Full Classifier + Flow Cache** | **100.00%** | **0.00%** | **6.3 ms** |
+
+32.7% of packets were served from the flow cache.
+
+### Live UDP Demonstration
+
+The live demo uses real UDP sockets and a software QoS router.
+
+| Parameter | Value |
+|---|---|
+| Router capacity | 1 Mbit/s |
+| Offered load | Approximately 190% |
+| Duration | 8 seconds |
+| Traffic | Real UDP packets |
+
+#### Live Scheduler Comparison
+
+| Scheduler | Emergency p99 | Emergency Loss | Voice p99 | SLA (EM/VO/VI) |
+|---|---:|---:|---:|---|
+| FIFO | 200.7 ms | 3.3% | 202.2 ms | F/F/F |
+| Strict PQ | 12.0 ms | 0% | 14.7 ms | P/P/P |
+| WFQ | 13.8 ms | 0% | 13.7 ms | P/P/P |
+| DRR | 38.3 ms | 0% | 36.4 ms | P/P/P |
+| **EPS** | **11.9 ms** | **0%** | **15.1 ms** | **P/P/P** |
+
+#### Live Demo with a 900 kbit/s Spoofed Flood
+
+| Scheduler | Emergency p99 | Emergency Loss | Voice p99 |
+|---|---:|---:|---:|
+| FIFO | 203 ms | 30.3% | 202 ms |
+| Strict PQ | 112 ms | 0.62% | 112 ms |
+| **EPS** | **13.6 ms** | **0%** | **19.6 ms** |
+
+Live measurements may vary slightly due to operating-system scheduling, but the overall performance ordering is stable.
+
+### Important Experimental Observations
+
+- **TC1:** At approximately 70% utilization, FIFO already meets the SLA. QoS becomes important under congestion.
+- **TC2/TC3:** All QoS schedulers protect low-rate emergency and voice traffic during congestion.
+- **TC4:** Packets arriving during an outage can remain delayed for up to the outage duration. EPS achieves zero emergency packet loss through push-out buffer management.
+- **TC5:** Video must degrade because the available bandwidth cannot satisfy all traffic demands. EPS and PQ protect emergency and voice traffic.
+- **TC6:** Strict PQ and WFQ/DRR cannot adequately protect against spoofed emergency traffic. EPS uses per-flow policing.
+- **TC8:** Strict PQ starves lower-priority traffic. EPS preserves video service but voice oversubscription remains a limitation.
+- **TC9:** Random packet loss affects all classes. Scheduling alone cannot eliminate physical link loss; FEC or retransmission is required.
+
+---
+
+## 9. Wireshark and Packet-Level Verification
+
+The project includes packet capture and verification tooling to validate that the scheduling behaviour observed in the simulator is reflected in actual packet output.
+
+### Generate a PCAP File
+
+Run:
+
+```bash
+python3 run_simulation.py --scenario tc2 --pcap results/tc2_eps.pcap --pcap-scheduler eps
 ```
-tc2_eps.pcap  (EPS)                              tc2_fifo.pcap (FIFO)
-class        packets  mean ms  p99 ms            class        packets  mean ms  p99 ms
-emergency       2143     0.58    1.31            emergency       2081    95.65   100.55
-voice           9437     0.76    1.57            voice           9142    95.77   100.42
-video           3372    12.55   59.38            video           2348    94.90   100.80
-best_effort     1294   106.21  156.85            best_effort     1662    96.48   100.98
-VERDICT: PRIORITY HONOURED                       VERDICT: NO PRIORITY EFFECT (FIFO-like)
+
+This generates a packet capture containing packets as they leave the bottleneck.
+
+The capture includes:
+
+- Ethernet headers.
+- IPv4 headers.
+- UDP headers.
+- QEP headers.
+- Actual DSCP markings.
+- Valid IP checksums.
+
+### Open in Wireshark
+
+```bash
+wireshark -X lua_script:docs/qep_dissector.lua results/tc2_eps.pcap
 ```
-* Live/Mininet captures: capture on the loopback / `r1-eth2` interface, then `python3 tools/pcap_verify.py capture.pcap`
-  (classic pcap format; in Wireshark use *File -> Save As -> pcap*).
 
-## 9. Design iterations (what testing taught us)
+### Useful Wireshark Display Filters
 
-1. First EPS used only an aggregate emergency policer -> TC6 showed genuine alarms demoted (p99 307 ms) because the spoofed
-   flood consumed the tokens. Fix: **per-flow + aggregate** policing.
-2. The stateless classifier leaked 0.3-0.5 % of packets to best effort under noisy markings (TC7 emergency loss 0.12 %).
-   Fix: **flow cache**.
-3. EPS shared buffer let video fill all 125 kB under degradation (p99 885 ms). Fix: per-queue caps for video/BE.
-4. Live demo: the 10 Mbit/s per-flow profile was far too generous for a 1 Mbit/s link. Profiles must be scaled to the link.
+| Filter | Description |
+|---|---|
+| `qep.cls == 0` | Emergency packets |
+| `ip.dsfield.dscp == 48` | CS6-marked packets |
+| `qep.flags.alert == 1` | Emergency alert packets |
+| `qep && frame.time_delta_displayed > 0.05` | QEP packets with displayed time delta above 50 ms |
 
-## 10. Limitations and future work
+### Automated PCAP Verification
 
-* Markings are not authenticated (see TC6 note); add HMAC tokens or ingress allow-lists.
-* One bottleneck, UDP-style sources (no TCP congestion control feedback); ECN/AQM (CoDel/RED) not modelled.
-* Mininet script (`mininet/mn_qos_topo.py`) needs Linux + root and was *not executed in the authoring environment*;
-  the Python modules it relies on are the tested ones, the `tc` command syntax follows standard tbf/prio/htb usage.
-  It approximates EPS with HTB (no per-flow policing or push-out in `tc`).
-* Call admission control, multi-hop topologies, preemption of in-flight frames (link fragmentation) are future work.
+```bash
+python3 tools/pcap_verify.py results/tc2_eps.pcap
+```
+
+The verification tool checks:
+
+- QEP header checksums.
+- DSCP and traffic-class consistency.
+- Packet-level delay.
+- Scheduling priority.
+- Traffic-class performance.
+
+### Example Packet-Level Results
+
+**EPS vs FIFO under congestion**
+
+| Class | EPS Packets | Mean Delay | p99 Delay |
+|---|---:|---:|---:|
+| Emergency | 2143 | 0.58 ms | 1.31 ms |
+| Voice | 9437 | 0.76 ms | 1.57 ms |
+| Video | 3372 | 12.55 ms | 59.38 ms |
+| Best Effort | 1294 | 106.21 ms | 156.85 ms |
+
+| Class | FIFO Packets | Mean Delay | p99 Delay |
+|---|---:|---:|---:|
+| Emergency | 2081 | 95.65 ms | 100.55 ms |
+| Voice | 9142 | 95.77 ms | 100.42 ms |
+| Video | 2348 | 94.90 ms | 100.80 ms |
+| Best Effort | 1662 | 96.48 ms | 100.98 ms |
+
+**Verification Verdicts:**
+
+- EPS: `PRIORITY HONOURED`
+- FIFO: `NO PRIORITY EFFECT (FIFO-like)`
+
+The QEP timestamp represents arrival time at the bottleneck, allowing capture time minus QEP timestamp to estimate queueing and serialization delay.
+
+For live or Mininet captures, capture on the loopback or `r1-eth2` interface:
+
+```bash
+python3 tools/pcap_verify.py capture.pcap
+```
+
+Use classic PCAP format when exporting captures from Wireshark.
+
+---
+
+## 10. Design Iterations and Improvements
+
+The implementation evolved through several iterations based on experimental results.
+
+### 1. Aggregate-Only Policing
+
+**Initial problem:** The first EPS implementation used only an aggregate emergency token bucket.
+
+During TC6, spoofed traffic consumed the available tokens, causing genuine emergency packets to be demoted. Emergency p99 delay increased to 307 ms.
+
+**Improvement:** Added both per-flow and aggregate token-bucket policing.
+
+### 2. Stateless Classification
+
+**Initial problem:** The stateless classifier misclassified approximately 0.3–0.5% of packets under noisy markings.
+
+Emergency packet loss reached 0.12% in TC7.
+
+**Improvement:** Introduced a flow cache to preserve previously established classifications.
+
+### 3. Shared Buffer Management
+
+**Initial problem:** Video traffic could fill the entire 125 kB shared buffer during network degradation, causing excessive queueing delay.
+
+Video p99 delay reached 885 ms.
+
+**Improvement:** Introduced individual queue capacity limits for video and best-effort traffic.
+
+### 4. Live Demo Rate Scaling
+
+**Initial problem:** The initial 10 Mbit/s per-flow traffic profile was too generous for the 1 Mbit/s live router.
+
+**Improvement:** Scaled traffic profiles and policing limits according to the actual link capacity.
+
+---
+
+## 11. Limitations and Future Work
+
+Although the project demonstrates significant improvements in emergency traffic prioritization, several limitations remain.
+
+### Current Limitations
+
+1. **Unauthenticated Emergency Markings:** QEP markings are not cryptographically authenticated. A malicious host can claim emergency priority. Future implementations should introduce HMAC-based authentication or ingress allow-lists.
+
+2. **Single Bottleneck Architecture:** The experiments focus on a single congested egress link rather than a multi-hop network.
+
+3. **UDP-Style Traffic Models:** TCP congestion-control feedback is not fully modelled.
+
+4. **No ECN/AQM:** Active Queue Management techniques such as CoDel and RED are not included.
+
+5. **Call Admission Control:** EPS requires call admission control to prevent excessive voice traffic from exceeding the reserved 35% aggregate capacity.
+
+6. **Physical Packet Preemption:** The scheduler does not support preemption of in-flight Ethernet frames or link fragmentation.
+
+7. **Mininet Approximation:** The Mininet implementation uses Linux `tc` TBF, PRIO and HTB configurations. It approximates EPS using HTB and does not implement the full per-flow policing and push-out mechanisms.
+
+   The Mininet script (`mininet/mn_qos_topo.py`) requires Linux and root privileges and was not executed in the authoring environment.
+
+### Future Enhancements
+
+- Cryptographic authentication of emergency traffic.
+- HMAC-based QEP authentication tokens.
+- Multi-hop network topology support.
+- Dynamic bandwidth allocation.
+- Voice call admission control.
+- ECN and Active Queue Management.
+- Forward Error Correction and retransmission.
+- Enhanced Mininet implementation of EPS.
+- Adaptive scheduling based on real-time traffic conditions.
+
+---
+
+## 12. Installation and Execution
+
+### Requirements
+
+- Python 3.8 or later.
+- No external Python packages required.
+- Linux and root privileges for Mininet emulation.
+- Wireshark and tshark for packet inspection (optional).
+
+### Run Automated Tests
+
+```bash
+python3 -m unittest -v tests.test_qos
+```
+
+Expected: 31 automated tests.
+
+### Run All Simulation Scenarios
+
+```bash
+python3 run_simulation.py --scenario all
+```
+
+Generated reports:
+
+```text
+results/
+    summary_all.md
+    report_all.html
+```
+
+### Run the Live UDP Demonstration
+
+```bash
+python3 live/run_live_demo.py
+```
+
+This launches real UDP traffic through the software QoS router and evaluates the scheduling algorithms.
+
+### Launch the Web Dashboard
+
+```bash
+python3 dashboard/server.py
+```
+
+Open:
+
+http://localhost:8080
+
+The dashboard contains two separate views:
+
+**Simulation View**
+- Scenario selection.
+- Scheduler comparison.
+- Traffic-class performance.
+- Delay and jitter metrics.
+- SLA results.
+- Simulation charts.
+
+**Live Demo View**
+- Real UDP traffic monitoring.
+- Software router counters.
+- Traffic-class metrics.
+- SLA results.
+- Emergency-delay charts.
+- Live-run logs.
+
+The dashboard server prints timestamped request, simulation and live-run logs to the terminal.
+
+### Optional: Mininet Emulation
+
+```bash
+sudo python3 mininet/mn_qos_topo.py
+```
+
+Requires a Linux environment with Mininet and the Linux traffic-control (`tc`) utilities installed.
+
+---
+
+## Project Summary
+
+QoS-Aware Emergency Traffic Prioritization demonstrates how intelligent packet classification, traffic policing and hybrid scheduling can improve the reliability of critical network communications during congestion.
+
+The proposed **Emergency Priority Scheduler (EPS)** combines strict priority for emergency and voice traffic with weighted fair sharing for video and best-effort traffic. Its per-flow policing and push-out buffer management address important weaknesses found in conventional scheduling approaches.
+
+Through discrete-event simulation, real UDP traffic, network emulation and packet-level verification, the project evaluates both the performance benefits and limitations of different QoS scheduling strategies.
+
+**The central objective is simple: ensure that the packets that matter most are delivered first, without unnecessarily sacrificing the rest of the network.**
